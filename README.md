@@ -1,36 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mettrie App
 
-## Getting Started
+## Prerequisites
 
-First, run the development server:
+- macOS with [Homebrew](https://brew.sh) installed
+- Node.js 18+ (`node --version` to check)
+
+## Local dev setup
+
+Run these once to set up your machine, then the last two commands every time you work.
+
+### 1. Install Postgres 17 + pgvector
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+brew install postgresql@17 pgvector
+brew services start postgresql@17
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**Why pg17 and not pg16?** pgvector's Homebrew formula only ships pre-built binaries for pg17/18. pg16 requires building from source, which fails on recent macOS due to SDK header issues. Use pg17.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Why not Docker?** Docker Desktop has persistent VM corruption issues on macOS Apple Silicon. Native Homebrew Postgres is simpler and more reliable for local dev. Production uses Supabase/Neon (managed Postgres) — same wire protocol, no code changes to deploy.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 2. Create the Mettrie database user and metadata DB
 
-## Learn More
+```bash
+# Create the mettrie user (run as your mac user, not as mettrie)
+psql postgres -c "CREATE USER mettrie WITH PASSWORD 'mettrie_dev' CREATEDB;"
 
-To learn more about Next.js, take a look at the following resources:
+# Create the metadata database
+createdb -U mettrie mettrie_meta
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Enable pgvector (must run as superuser, i.e. your mac username)
+psql -d mettrie_meta -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Run this block only once. If you get "already exists" errors, that's fine — skip ahead.
 
-## Deploy on Vercel
+### 3. Set up environment variables
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+cp .env.example .env.local
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open `.env.local` and fill in:
+- `AUTH_SECRET` → run `openssl rand -base64 32` and paste the output
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` → see Google OAuth setup below
+- `ANTHROPIC_API_KEY` → from console.anthropic.com → API Keys
+
+`DATABASE_URL` is pre-filled and works with the setup above. Leave it as-is for local dev.
+
+### 4. Install dependencies and run
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) (may use port 3002 if 3000 is taken).
+
+---
+
+## Google OAuth setup (needed for P1 — auth)
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com)
+2. Create a new project (e.g. `mettrie-mvp`)
+3. Enable these APIs: **Gmail API**, **Google People API**
+4. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
+5. Application type: **Web application**
+6. Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`
+7. Copy the Client ID and Client Secret into `.env.local`
+
+> Note: while in development, Google will show an "unverified app" warning to sign-in users. Add tester emails under **OAuth consent screen → Test users** to allow specific accounts to sign in.
+
+---
+
+## Per-user gbrain databases
+
+Each Mettrie user gets their own Postgres database (`gbrain_user_<id>`). These are created automatically when a user signs up — you don't create them manually. They live on the same Postgres server as `mettrie_meta`.
+
+To inspect a user's gbrain DB directly:
+```bash
+psql -d gbrain_user_<id>
+```
+
+---
+
+## Resetting local state
+
+To wipe all data and start fresh:
+```bash
+# Drop and recreate the metadata DB
+dropdb mettrie_meta && createdb -U mettrie mettrie_meta
+psql -d mettrie_meta -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# Drop all per-user gbrain DBs (replace with actual user IDs)
+dropdb gbrain_user_<id>
+```
+
+---
+
+## Project structure
+
+```
+lib/              Server-side core modules — never imported by client code
+  db.ts           Postgres pool for metadata DB + per-user gbrain DB helper
+  gbrain.ts       gbrain CLI wrapper (put_page, brain_search, etc.)
+  anthropic.ts    Anthropic SDK wrapper — all Haiku/Sonnet calls go here
+app/              Next.js App Router — pages and API routes
+public/           Static assets
+```
+
+## Build plan and backlog
+
+See `../BUILD_PLAN.md` for the phased plan and `../BUILD_BACKLOG.md` for ticket status.
