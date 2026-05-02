@@ -38,7 +38,7 @@ export default async function Home() {
   const gmailConnected = await hasGmailScope(userId);
   const gmailStatus = gmailConnected
     ? await getGmailStatus(userId)
-    : { connected: false, lastSyncedAt: null, messageCount: 0 };
+    : { connected: false, lastSyncedAt: null, nextSyncAt: null, messageCount: 0, syncIntervalHours: 24 };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 gap-4">
@@ -59,7 +59,9 @@ export default async function Home() {
       <GmailPanel
         connected={gmailConnected}
         lastSyncedAt={gmailStatus.lastSyncedAt}
+        nextSyncAt={gmailStatus.nextSyncAt ?? null}
         messageCount={gmailStatus.messageCount}
+        syncIntervalHours={gmailStatus.syncIntervalHours}
       />
 
       <form

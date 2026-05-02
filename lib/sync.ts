@@ -1,8 +1,6 @@
 import { getMetaDb } from "./db";
 import { listMessageIds, fetchMessage, extractTextBody } from "./gmail";
 
-// Maximum pages to fetch per sync run (100 messages per page).
-// First sync fetches up to 3 pages; incremental syncs fetch 1.
 const MAX_INITIAL_PAGES = 3;
 
 export interface SyncResult {
@@ -50,15 +48,7 @@ export async function syncGmail(userId: string): Promise<SyncResult> {
            (user_id, source, source_ref, subject, from_addr, date_sent, body_text, raw_json)
          VALUES ($1, 'gmail', $2, $3, $4, $5, $6, $7)
          ON CONFLICT (user_id, source, source_ref) DO NOTHING`,
-        [
-          userId,
-          id,
-          subject,
-          fromAddr,
-          dateHeader ? new Date(dateHeader) : null,
-          bodyText,
-          msg,
-        ]
+        [userId, id, subject, fromAddr, dateHeader ? new Date(dateHeader) : null, bodyText, msg]
       );
       newMessages++;
     }
@@ -68,7 +58,6 @@ export async function syncGmail(userId: string): Promise<SyncResult> {
     pagesProcessed++;
   } while (pageToken && pagesProcessed < maxPages);
 
-  // Persist cursor so the next sync continues where we left off.
   await db.query(
     `INSERT INTO sync_cursors (user_id, source, cursor, last_synced_at)
      VALUES ($1, 'gmail', $2, now())
@@ -80,16 +69,21 @@ export async function syncGmail(userId: string): Promise<SyncResult> {
   return { newMessages, source: "gmail" };
 }
 
-export async function getGmailStatus(userId: string): Promise<{
+export interface GmailStatus {
   connected: boolean;
   lastSyncedAt: string | null;
+  nextSyncAt: string | null;
   messageCount: number;
-}> {
+  syncIntervalHours: number;
+}
+
+export async function getGmailStatus(userId: string): Promise<GmailStatus> {
   const db = getMetaDb();
 
   const [cursorRes, countRes] = await Promise.all([
     db.query(
-      `SELECT last_synced_at FROM sync_cursors WHERE user_id = $1 AND source = 'gmail'`,
+      `SELECT last_synced_at, sync_interval_hours FROM sync_cursors
+       WHERE user_id = $1 AND source = 'gmail'`,
       [userId]
     ),
     db.query(
@@ -98,9 +92,55 @@ export async function getGmailStatus(userId: string): Promise<{
     ),
   ]);
 
+  const row = cursorRes.rows[0];
+  const syncIntervalHours: number = row?.sync_interval_hours ?? 24;
+  const lastSyncedAt: string | null = row?.last_synced_at?.toISOString() ?? null;
+
+  let nextSyncAt: string | null = null;
+  if (lastSyncedAt) {
+    const next = new Date(lastSyncedAt);
+    next.setHours(next.getHours() + syncIntervalHours);
+    nextSyncAt = next.toISOString();
+  }
+
   return {
     connected: true,
-    lastSyncedAt: cursorRes.rows[0]?.last_synced_at?.toISOString() ?? null,
+    lastSyncedAt,
+    nextSyncAt,
     messageCount: parseInt(countRes.rows[0]?.cnt ?? "0", 10),
+    syncIntervalHours,
   };
+}
+
+export async function updateSyncInterval(
+  userId: string,
+  source: string,
+  intervalHours: number
+): Promise<void> {
+  const db = getMetaDb();
+  await db.query(
+    `INSERT INTO sync_cursors (user_id, source, sync_interval_hours, last_synced_at)
+     VALUES ($1, $2, $3, now())
+     ON CONFLICT (user_id, source)
+     DO UPDATE SET sync_interval_hours = EXCLUDED.sync_interval_hours`,
+    [userId, source, intervalHours]
+  );
+}
+
+// Called by the scheduler every 30 minutes. Enqueues a sync for any user
+// whose sync interval has elapsed since their last sync.
+export async function schedulerTick(): Promise<void> {
+  const db = getMetaDb();
+  const { rows } = await db.query<{ user_id: string }>(
+    `SELECT user_id FROM sync_cursors
+     WHERE source = 'gmail'
+       AND last_synced_at + (sync_interval_hours * interval '1 hour') < now()`
+  );
+  if (rows.length === 0) return;
+
+  const { enqueue } = await import("./queue");
+  for (const { user_id } of rows) {
+    console.log(`[scheduler] enqueueing sync_gmail for user ${user_id}`);
+    enqueue({ type: "sync_gmail", userId: user_id });
+  }
 }

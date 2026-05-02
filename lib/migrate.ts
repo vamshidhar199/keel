@@ -62,8 +62,12 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
   source TEXT NOT NULL,
   cursor TEXT,
   last_synced_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sync_interval_hours INT NOT NULL DEFAULT 24,
   CONSTRAINT sync_cursors_pkey PRIMARY KEY (user_id, source)
 );
+
+ALTER TABLE sync_cursors
+  ADD COLUMN IF NOT EXISTS sync_interval_hours INT NOT NULL DEFAULT 24;
 `;
 
 export async function runMigrations(): Promise<void> {
