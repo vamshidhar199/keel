@@ -41,6 +41,29 @@ CREATE TABLE IF NOT EXISTS verification_token (
   expires TIMESTAMPTZ NOT NULL,
   CONSTRAINT verification_token_pkey PRIMARY KEY (identifier, token)
 );
+
+CREATE TABLE IF NOT EXISTS raw_events (
+  id UUID NOT NULL DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  source TEXT NOT NULL,
+  source_ref TEXT NOT NULL,
+  subject TEXT,
+  from_addr TEXT,
+  date_sent TIMESTAMPTZ,
+  body_text TEXT,
+  raw_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT raw_events_pkey PRIMARY KEY (id),
+  CONSTRAINT raw_events_user_source_ref_key UNIQUE (user_id, source, source_ref)
+);
+
+CREATE TABLE IF NOT EXISTS sync_cursors (
+  user_id UUID NOT NULL,
+  source TEXT NOT NULL,
+  cursor TEXT,
+  last_synced_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT sync_cursors_pkey PRIMARY KEY (user_id, source)
+);
 `;
 
 export async function runMigrations(): Promise<void> {

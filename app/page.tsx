@@ -1,4 +1,7 @@
 import { auth, signIn, signOut } from "@/auth";
+import { hasGmailScope } from "@/lib/gmail";
+import { getGmailStatus } from "@/lib/sync";
+import { GmailPanel } from "./gmail-panel";
 
 export default async function Home() {
   const session = await auth();
@@ -31,11 +34,18 @@ export default async function Home() {
     );
   }
 
+  const userId = session.user.id;
+  const gmailConnected = await hasGmailScope(userId);
+  const gmailStatus = gmailConnected
+    ? await getGmailStatus(userId)
+    : { connected: false, lastSyncedAt: null, messageCount: 0 };
+
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 gap-4">
       <h1 className="text-3xl font-semibold tracking-tight mb-2">Mettrie</h1>
-      <p className="text-zinc-500 mb-8 text-sm">Your self-improving knowledge system</p>
-      <div className="bg-white border border-zinc-200 rounded-lg p-6 shadow-sm mb-4 w-full max-w-sm">
+      <p className="text-zinc-500 mb-4 text-sm">Your self-improving knowledge system</p>
+
+      <div className="bg-white border border-zinc-200 rounded-lg p-6 shadow-sm w-full max-w-sm">
         <p className="text-xs text-zinc-400 uppercase tracking-wide mb-1">Signed in as</p>
         <p className="font-medium text-zinc-800">{session.user.email}</p>
         {session.user.name && (
@@ -45,6 +55,13 @@ export default async function Home() {
           id: {session.user.id}
         </p>
       </div>
+
+      <GmailPanel
+        connected={gmailConnected}
+        lastSyncedAt={gmailStatus.lastSyncedAt}
+        messageCount={gmailStatus.messageCount}
+      />
+
       <form
         action={async () => {
           "use server";
