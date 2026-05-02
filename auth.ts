@@ -28,6 +28,30 @@ const nextAuth = NextAuth({
     }),
   ],
   callbacks: {
+    async signIn({ account, user }) {
+      // NextAuth's pg-adapter doesn't update tokens on repeat sign-ins, so we
+      // do it manually here. This ensures the gmail scope is persisted after
+      // the user re-authenticates to grant new permissions.
+      if (account && user.id) {
+        await getMetaDb().query(
+          `UPDATE accounts
+           SET access_token  = $1,
+               refresh_token = COALESCE($2, refresh_token),
+               expires_at    = $3,
+               scope         = $4
+           WHERE "userId" = $5 AND provider = $6`,
+          [
+            account.access_token,
+            account.refresh_token ?? null,
+            account.expires_at ?? null,
+            account.scope ?? null,
+            user.id,
+            account.provider,
+          ]
+        );
+      }
+      return true;
+    },
     session({ session, user }) {
       session.user.id = user.id;
       return session;
