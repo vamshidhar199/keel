@@ -15,10 +15,19 @@ function gbrainDbUrl(userId: string): string {
 
 // Invokes the gbrain CLI with the correct DB for the given user.
 async function gbrain(userId: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("gbrain", args, {
-    env: { ...process.env, DATABASE_URL: gbrainDbUrl(userId) },
-    timeout: 60_000,
-  });
+  const bunBin = process.env.BUN_BIN ?? "/Users/monishavamshi/.bun/bin";
+  const { stdout } = await execFileAsync(
+    `${bunBin}/gbrain`,
+    args,
+    {
+      env: {
+        ...process.env,
+        PATH: `${bunBin}:${process.env.PATH}`,
+        GBRAIN_DATABASE_URL: gbrainDbUrl(userId),
+      },
+      timeout: 60_000,
+    }
+  );
   return stdout;
 }
 
@@ -36,20 +45,20 @@ export async function provisionGbrainDb(userId: string): Promise<void> {
     metaClient.release();
   }
 
-  // Enable pgvector in the new DB.
-  const gbPool = getGbrainDb(userId);
+  // Enable pgvector and grant BYPASSRLS (required for gbrain RLS migrations)
+  // using the superuser connection (no password needed on local socket).
+  const { Pool: PgPool } = await import("pg");
+  const superPool = new PgPool({ connectionString: `postgresql://localhost:5432/${dbName}` });
   try {
-    await gbPool.query("CREATE EXTENSION IF NOT EXISTS vector");
+    await superPool.query("CREATE EXTENSION IF NOT EXISTS vector");
+    const dbUser = new URL(process.env.DATABASE_URL!).username;
+    await superPool.query(`ALTER ROLE "${dbUser}" BYPASSRLS`);
   } finally {
-    await gbPool.end();
+    await superPool.end();
   }
 
-  // Run gbrain schema migrations. Warns if CLI not yet installed (B0-004).
-  try {
-    await gbrain(userId, ["doctor", "--migrate"]);
-  } catch {
-    console.warn(`[gbrain] doctor --migrate skipped for "${dbName}" — install gbrain CLI to complete B0-004`);
-  }
+  // Run gbrain schema migrations.
+  await gbrain(userId, ["apply-migrations", "--yes"]);
 }
 
 // Write a page to the user's gbrain instance.
