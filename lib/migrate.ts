@@ -52,9 +52,29 @@ CREATE TABLE IF NOT EXISTS raw_events (
   date_sent TIMESTAMPTZ,
   body_text TEXT,
   raw_json JSONB,
+  extraction_status TEXT NOT NULL DEFAULT 'pending',
+  extracted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT raw_events_pkey PRIMARY KEY (id),
   CONSTRAINT raw_events_user_source_ref_key UNIQUE (user_id, source, source_ref)
+);
+
+ALTER TABLE raw_events
+  ADD COLUMN IF NOT EXISTS extraction_status TEXT NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS extracted_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_raw_events_extraction_status
+  ON raw_events (user_id, extraction_status);
+
+CREATE TABLE IF NOT EXISTS llm_costs (
+  id UUID NOT NULL DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INT NOT NULL,
+  output_tokens INT NOT NULL,
+  cost_usd NUMERIC(10, 6) NOT NULL,
+  called_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT llm_costs_pkey PRIMARY KEY (id)
 );
 
 CREATE TABLE IF NOT EXISTS sync_cursors (

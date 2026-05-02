@@ -1,7 +1,9 @@
 import { auth, signIn, signOut } from "@/auth";
 import { hasGmailScope } from "@/lib/gmail";
 import { getGmailStatus } from "@/lib/sync";
+import { getExtractionStatus } from "@/lib/pipeline";
 import { GmailPanel } from "./gmail-panel";
+import { ExtractionPanel } from "./extraction-panel";
 
 export default async function Home() {
   const session = await auth();
@@ -35,13 +37,16 @@ export default async function Home() {
   }
 
   const userId = session.user.id;
-  const gmailConnected = await hasGmailScope(userId);
+  const [gmailConnected, extractionStatus] = await Promise.all([
+    hasGmailScope(userId),
+    getExtractionStatus(userId),
+  ]);
   const gmailStatus = gmailConnected
     ? await getGmailStatus(userId)
     : { connected: false, lastSyncedAt: null, nextSyncAt: null, messageCount: 0, syncIntervalHours: 24 };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 gap-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-50 gap-4 py-12">
       <h1 className="text-3xl font-semibold tracking-tight mb-2">Mettrie</h1>
       <p className="text-zinc-500 mb-4 text-sm">Your self-improving knowledge system</p>
 
@@ -62,6 +67,14 @@ export default async function Home() {
         nextSyncAt={gmailStatus.nextSyncAt ?? null}
         messageCount={gmailStatus.messageCount}
         syncIntervalHours={gmailStatus.syncIntervalHours}
+      />
+
+      <ExtractionPanel
+        pending={extractionStatus.pending}
+        extracted={extractionStatus.extracted}
+        skipped={extractionStatus.skipped}
+        failed={extractionStatus.failed}
+        pagesCreated={extractionStatus.pagesCreated}
       />
 
       <form

@@ -62,13 +62,9 @@ export async function provisionGbrainDb(userId: string): Promise<void> {
 }
 
 // Write a page to the user's gbrain instance.
-export async function putPage(
-  userId: string,
-  slug: string,
-  opts: { type: string; frontmatter: Record<string, unknown>; body: string }
-): Promise<void> {
-  // TODO (B3-006): invoke `gbrain put_page <slug> --type ... --frontmatter ... --body ...`
-  throw new Error("putPage not implemented yet");
+// `content` must be a complete markdown string with YAML frontmatter.
+export async function putPage(userId: string, slug: string, content: string): Promise<void> {
+  await gbrain(userId, ["put", slug, "--content", content]);
 }
 
 // Hybrid search across the user's gbrain instance.
@@ -77,8 +73,8 @@ export async function brainSearch(
   query: string,
   limit = 10
 ): Promise<{ chunk_id: string; slug: string; content: string; score: number }[]> {
-  // TODO (B4-001): invoke `gbrain brain_search --query ... --limit ...`
-  throw new Error("brainSearch not implemented yet");
+  // TODO (B4-001): parse gbrain query JSON output
+  throw new Error("brainSearch not implemented yet — implement in P4");
 }
 
 // List pages in the user's gbrain instance.
