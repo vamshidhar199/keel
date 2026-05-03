@@ -67,6 +67,7 @@ export async function listMessageIds(
   const res = await gmail.users.messages.list({
     userId: "me",
     maxResults: 100,
+    labelIds: ["INBOX"],
     pageToken,
   });
   const ids = (res.data.messages ?? []).map((m) => m.id!).filter(Boolean);

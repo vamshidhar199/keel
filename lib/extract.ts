@@ -1,4 +1,5 @@
 import { callClaude, HAIKU } from "./anthropic";
+import type { KnownEntity } from "./compose";
 
 export type EntityType = "person" | "company" | "project" | "topic";
 
@@ -18,7 +19,7 @@ export interface ExtractionResult {
   confidence: number;
 }
 
-const SYSTEM_PROMPT = `You are a business intelligence analyst extracting structured knowledge from emails.
+const BASE_SYSTEM_PROMPT = `You are a business intelligence analyst extracting structured knowledge from emails.
 
 Return a JSON object with this exact schema:
 {
@@ -38,9 +39,11 @@ Return a JSON object with this exact schema:
 }
 
 Rules:
-- worth_extracting = false for: newsletters, marketing, automated notifications, receipts, spam, no-reply senders, list-unsubscribe emails
-- worth_extracting = true for: real human correspondence, meeting follow-ups, business discussions, commitments, decisions
+- worth_extracting = false for: promotional/marketing emails, sale announcements, generic newsletters, automated receipts/order confirmations, spam
+- worth_extracting = true for: job opportunities, business proposals, meeting requests, personal correspondence, commitments, decisions, professional updates about specific people/companies/roles
+- Judge by CONTENT INTENT not sender address — a no-reply sender can still contain valuable signal (e.g. a job opportunity, a business update)
 - slug format: people/first-last, companies/company-name, projects/project-name, topics/topic-name (all lowercase, hyphens only)
+- CRITICAL: If an entity matches one listed in "Known entities" below, use EXACTLY that slug — do not invent a new one
 - claims: specific facts stated about the entity in this email (not vague)
 - attributes: structured data e.g. { "role": "CTO", "needs_po": true, "company": "companies/acme" }
 - commitments: action items or promises, e.g. "Send proposal by Friday"
@@ -48,6 +51,12 @@ Rules:
 - If worth_extracting is false, return empty entities/commitments arrays
 
 Return only valid JSON. No markdown fences, no commentary.`;
+
+function buildSystemPrompt(knownEntities: KnownEntity[]): string {
+  if (knownEntities.length === 0) return BASE_SYSTEM_PROMPT;
+  const list = knownEntities.map((e) => `  - ${e.slug} → ${e.title} (${e.type})`).join("\n");
+  return `${BASE_SYSTEM_PROMPT}\n\nKnown entities — use these slugs exactly if an entity matches:\n${list}`;
+}
 
 export async function extractEmail(
   userId: string,
@@ -57,7 +66,8 @@ export async function extractEmail(
     from_addr: string;
     date_sent: string | null;
     body_text: string;
-  }
+  },
+  knownEntities: KnownEntity[] = []
 ): Promise<ExtractionResult> {
   const emailContent = [
     `From: ${event.from_addr}`,
@@ -71,10 +81,12 @@ export async function extractEmail(
     userId,
     HAIKU,
     [{ role: "user", content: emailContent }],
-    { system: SYSTEM_PROMPT, maxTokens: 1024 }
+    { system: buildSystemPrompt(knownEntities), maxTokens: 1024 }
   );
 
-  const parsed = JSON.parse(raw);
+  // Strip markdown code fences if the model wrapped the JSON.
+  const cleaned = raw.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
+  const parsed = JSON.parse(cleaned);
 
   return {
     worthExtracting: Boolean(parsed.worth_extracting),

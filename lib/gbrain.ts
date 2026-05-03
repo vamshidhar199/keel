@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { URL } from "url";
 import { getMetaDb, getGbrainDb } from "./db";
+import { embedText } from "./embeddings";
 
 const execFileAsync = promisify(execFile);
 
@@ -45,10 +46,14 @@ export async function provisionGbrainDb(userId: string): Promise<void> {
     metaClient.release();
   }
 
-  // Enable pgvector and grant BYPASSRLS (required for gbrain RLS migrations)
-  // using the superuser connection (no password needed on local socket).
+  // Enable pgvector and grant BYPASSRLS using a superuser connection.
+  // In prod: set SUPER_DATABASE_URL=postgresql://postgres:pass@host:5432/postgres
+  // In dev: leave unset — falls back to local socket (peer auth, no password needed).
   const { Pool: PgPool } = await import("pg");
-  const superPool = new PgPool({ connectionString: `postgresql://localhost:5432/${dbName}` });
+  const superBase = process.env.SUPER_DATABASE_URL ?? "postgresql://localhost:5432/postgres";
+  const superUrl = new URL(superBase);
+  superUrl.pathname = `/${dbName}`;
+  const superPool = new PgPool({ connectionString: superUrl.toString() });
   try {
     await superPool.query("CREATE EXTENSION IF NOT EXISTS vector");
     const dbUser = new URL(process.env.DATABASE_URL!).username;
@@ -67,30 +72,189 @@ export async function putPage(userId: string, slug: string, content: string): Pr
   await gbrain(userId, ["put", slug, "--content", content]);
 }
 
-// Hybrid search across the user's gbrain instance.
+export interface BrainSearchHit {
+  chunk_id: number;
+  page_id: number;
+  slug: string;
+  title: string;
+  chunk_text: string;
+  score: number;
+}
+
+// Vector similarity search against the user's gbrain content_chunks table.
+// Bypasses the gbrain CLI (which truncates chunk_text to 100 chars and has subprocess overhead).
+// Embeds the query via OpenAI, then ranks chunks by cosine similarity.
 export async function brainSearch(
   userId: string,
   query: string,
-  limit = 10
-): Promise<{ chunk_id: string; slug: string; content: string; score: number }[]> {
-  // TODO (B4-001): parse gbrain query JSON output
-  throw new Error("brainSearch not implemented yet — implement in P4");
+  limit = 8
+): Promise<BrainSearchHit[]> {
+  const queryVector = await embedText(userId, query);
+  const vectorLiteral = `[${queryVector.join(",")}]`;
+
+  const db = getGbrainDb(userId);
+  try {
+    const { rows } = await db.query<BrainSearchHit>(
+      `SELECT cc.id   AS chunk_id,
+              cc.page_id,
+              p.slug,
+              p.title,
+              cc.chunk_text,
+              1 - (cc.embedding <=> $1::vector) AS score
+       FROM content_chunks cc
+       JOIN pages p ON p.id = cc.page_id
+       WHERE cc.embedding IS NOT NULL
+       ORDER BY cc.embedding <=> $1::vector
+       LIMIT $2`,
+      [vectorLiteral, limit]
+    );
+    return rows;
+  } finally {
+    await db.end();
+  }
 }
 
-// List pages in the user's gbrain instance.
+export interface PageSummary {
+  slug: string;
+  title: string;
+  type: string;
+  updated_at: string;
+  link_count: number;
+}
+
+// List all pages in the user's gbrain DB, optionally filtered by type.
+// link_count is the number of outgoing wikilinks from this page (for graph node sizing).
 export async function listPages(
   userId: string,
-  opts: { type?: string; limit?: number; offset?: number } = {}
-): Promise<{ slug: string; title: string; type: string; updated_at: string }[]> {
-  // TODO (B5-001)
-  throw new Error("listPages not implemented yet");
+  opts: { type?: string; limit?: number } = {}
+): Promise<PageSummary[]> {
+  const db = getGbrainDb(userId);
+  try {
+    const params: any[] = [];
+    let where = "";
+    if (opts.type) {
+      params.push(opts.type);
+      where = `WHERE p.type = $${params.length}`;
+    }
+    params.push(opts.limit ?? 500);
+    const limitParam = `$${params.length}`;
+
+    const { rows } = await db.query<PageSummary>(
+      `SELECT p.slug, p.title, p.type, p.updated_at,
+              COALESCE(l.cnt, 0)::int AS link_count
+       FROM pages p
+       LEFT JOIN (
+         SELECT from_page_id, COUNT(*) AS cnt
+         FROM links
+         GROUP BY from_page_id
+       ) l ON l.from_page_id = p.id
+       ${where}
+       ORDER BY p.updated_at DESC
+       LIMIT ${limitParam}`,
+      params
+    );
+    return rows;
+  } finally {
+    await db.end();
+  }
 }
 
-// Fetch a single page by slug.
+export interface PageDetail {
+  slug: string;
+  title: string;
+  type: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+  updated_at: string;
+}
+
+// Fetch a single page by slug. Splits compiled_truth into frontmatter + body.
 export async function getPage(
   userId: string,
   slug: string
-): Promise<{ slug: string; title: string; type: string; frontmatter: unknown; body: string } | null> {
-  // TODO (B5-001)
-  throw new Error("getPage not implemented yet");
+): Promise<PageDetail | null> {
+  const db = getGbrainDb(userId);
+  try {
+    const { rows } = await db.query<{
+      slug: string;
+      title: string;
+      type: string;
+      frontmatter: Record<string, unknown>;
+      compiled_truth: string;
+      updated_at: string;
+    }>(
+      `SELECT slug, title, type, frontmatter, compiled_truth, updated_at
+       FROM pages WHERE slug = $1 LIMIT 1`,
+      [slug]
+    );
+    const row = rows[0];
+    if (!row) return null;
+
+    // Strip the YAML frontmatter block from compiled_truth to get the body.
+    const body = (row.compiled_truth ?? "").replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
+
+    return {
+      slug: row.slug,
+      title: row.title,
+      type: row.type,
+      frontmatter: row.frontmatter ?? {},
+      body,
+      updated_at: row.updated_at,
+    };
+  } finally {
+    await db.end();
+  }
+}
+
+export interface GraphData {
+  nodes: { slug: string; title: string; type: string; link_count: number }[];
+  edges: { source: string; target: string }[];
+}
+
+// Fetch the full knowledge graph for visualization.
+export async function getGraph(userId: string): Promise<GraphData> {
+  const db = getGbrainDb(userId);
+  try {
+    const [nodes, edges] = await Promise.all([
+      db.query<{ slug: string; title: string; type: string; link_count: number }>(
+        `SELECT p.slug, p.title, p.type,
+                COALESCE(l.cnt, 0)::int AS link_count
+         FROM pages p
+         LEFT JOIN (
+           SELECT from_page_id, COUNT(*) AS cnt FROM links GROUP BY from_page_id
+         ) l ON l.from_page_id = p.id`
+      ),
+      db.query<{ source: string; target: string }>(
+        `SELECT pf.slug AS source, pt.slug AS target
+         FROM links l
+         JOIN pages pf ON pf.id = l.from_page_id
+         JOIN pages pt ON pt.id = l.to_page_id`
+      ),
+    ]);
+    return { nodes: nodes.rows, edges: edges.rows };
+  } finally {
+    await db.end();
+  }
+}
+
+// Fetch incoming wikilinks (which other pages link TO this slug).
+export async function getBacklinks(
+  userId: string,
+  slug: string
+): Promise<{ slug: string; title: string; type: string }[]> {
+  const db = getGbrainDb(userId);
+  try {
+    const { rows } = await db.query<{ slug: string; title: string; type: string }>(
+      `SELECT DISTINCT pf.slug, pf.title, pf.type
+       FROM links l
+       JOIN pages pf ON pf.id = l.from_page_id
+       JOIN pages pt ON pt.id = l.to_page_id
+       WHERE pt.slug = $1
+       ORDER BY pf.title`,
+      [slug]
+    );
+    return rows;
+  } finally {
+    await db.end();
+  }
 }

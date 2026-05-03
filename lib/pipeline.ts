@@ -1,6 +1,6 @@
 import { getMetaDb } from "./db";
 import { extractEmail } from "./extract";
-import { findExistingPage, composePage } from "./compose";
+import { findExistingPage, composePage, getKnownEntities } from "./compose";
 import { putPage } from "./gbrain";
 
 interface RawEventRow {
@@ -39,14 +39,21 @@ export async function processRawEvent(
   );
 
   try {
+    // Fetch known entities once — used by both Haiku (slug reuse) and Sonnet (wikilinks).
+    const knownEntities = await getKnownEntities(userId);
+
     // Step 1 — Haiku extraction.
-    const extraction = await extractEmail(userId, {
-      id: event.id,
-      subject: event.subject ?? "",
-      from_addr: event.from_addr ?? "",
-      date_sent: event.date_sent?.toISOString() ?? null,
-      body_text: event.body_text ?? "",
-    });
+    const extraction = await extractEmail(
+      userId,
+      {
+        id: event.id,
+        subject: event.subject ?? "",
+        from_addr: event.from_addr ?? "",
+        date_sent: event.date_sent?.toISOString() ?? null,
+        body_text: event.body_text ?? "",
+      },
+      knownEntities
+    );
 
     if (!extraction.worthExtracting || extraction.entities.length === 0) {
       await db.query(
@@ -72,7 +79,8 @@ export async function processRawEvent(
           fromAddr: event.from_addr ?? "",
           dateSent: event.date_sent?.toISOString() ?? null,
         },
-        existing?.content ?? null
+        existing?.content ?? null,
+        knownEntities
       );
 
       await putPage(userId, slug, content);
@@ -86,6 +94,7 @@ export async function processRawEvent(
 
     return { eventId, status: "extracted", pagesWritten };
   } catch (err: any) {
+    console.error(`[pipeline] event=${eventId} FAILED:`, err);
     await db.query(
       `UPDATE raw_events SET extraction_status = 'failed', extracted_at = now() WHERE id = $1`,
       [eventId]

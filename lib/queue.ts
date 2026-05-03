@@ -2,6 +2,18 @@ import { syncGmail } from "./sync";
 import { processRawEvent } from "./pipeline";
 import { getMetaDb } from "./db";
 
+// On startup: reset any jobs that were left in 'processing' due to a crash or restart.
+export async function resetStuckJobs(): Promise<void> {
+  const db = getMetaDb();
+  const result = await db.query(
+    `UPDATE raw_events SET extraction_status = 'pending'
+     WHERE extraction_status = 'processing'`
+  );
+  if (result.rowCount && result.rowCount > 0) {
+    console.log(`[queue] reset ${result.rowCount} stuck job(s) → pending`);
+  }
+}
+
 type Job =
   | { type: "sync_gmail"; userId: string }
   | { type: "extract_emails"; userId: string; limit: number };
@@ -51,7 +63,7 @@ async function run(job: Job): Promise<void> {
     console.log(`[queue] extract_emails user=${job.userId} count=${rows.length}`);
     for (const { id } of rows) {
       const result = await processRawEvent(job.userId, id);
-      console.log(`[queue] event=${id} status=${result.status} pages=${result.pagesWritten.join(",")}`);
+      console.log(`[queue] event=${id} status=${result.status} pages=${result.pagesWritten.join(",")}${result.error ? ` error=${result.error}` : ""}`);
     }
   }
 }

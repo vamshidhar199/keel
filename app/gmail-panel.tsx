@@ -75,8 +75,6 @@ export function GmailPanel({
       setIntervalHours(newHours);
       setIntervalMsg("Saved");
       setTimeout(() => setIntervalMsg(null), 2000);
-
-      // Recalculate nextSyncAt locally
       if (lastSync) {
         const next = new Date(lastSync);
         next.setHours(next.getHours() + newHours);
@@ -91,21 +89,26 @@ export function GmailPanel({
 
   if (!connected) {
     return (
-      <div className="bg-white border border-zinc-200 rounded-lg p-6 shadow-sm w-full max-w-sm">
-        <p className="text-xs text-zinc-400 uppercase tracking-wide mb-3">Gmail</p>
-        <p className="text-sm text-zinc-500 mb-4">
-          Gmail access not yet granted. Sign out and sign back in to connect.
+      <div className="bg-white border border-zinc-200 rounded-lg p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-zinc-400 uppercase tracking-wide">Gmail</p>
+          <span className="text-xs text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full font-medium">
+            Not connected
+          </span>
+        </div>
+        <p className="text-sm text-zinc-500">
+          Gmail access not granted. Sign out and sign back in to connect.
         </p>
         <p className="text-xs text-zinc-400">
           Your next sign-in will request{" "}
-          <code className="bg-zinc-100 px-1 rounded">gmail.readonly</code> access.
+          <code className="bg-zinc-100 px-1 py-0.5 rounded text-zinc-600">gmail.readonly</code> access.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white border border-zinc-200 rounded-lg p-6 shadow-sm w-full max-w-sm space-y-5">
+    <div className="bg-white border border-zinc-200 rounded-lg p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-zinc-400 uppercase tracking-wide">Gmail</p>
@@ -116,58 +119,48 @@ export function GmailPanel({
 
       {/* Stats */}
       <div className="space-y-1">
-        <p className="text-sm text-zinc-700">
-          <span className="font-medium">{count.toLocaleString()}</span>{" "}
-          <span className="text-zinc-400">messages stored</span>
-        </p>
-        {lastSync ? (
-          <p className="text-xs text-zinc-400">
-            Last sync: {new Date(lastSync).toLocaleString()}
-          </p>
-        ) : (
-          <p className="text-xs text-zinc-400">Not yet synced</p>
-        )}
-        {nextSync && (
-          <p className="text-xs text-zinc-400">
-            Next sync: {new Date(nextSync).toLocaleString()}
-          </p>
-        )}
-      </div>
-
-      {/* Sync schedule */}
-      <div>
-        <p className="text-xs text-zinc-400 mb-2">Auto-sync schedule</p>
-        <div className="flex gap-2">
-          <select
-            value={intervalHours}
-            onChange={(e) => handleSaveInterval(Number(e.target.value))}
-            disabled={savingInterval}
-            className="flex-1 text-sm border border-zinc-200 rounded-lg px-3 py-2 bg-white text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-300 disabled:opacity-50"
-          >
-            {INTERVAL_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          {intervalMsg && (
-            <span className="text-xs text-zinc-400 self-center">{intervalMsg}</span>
+        <p className="text-2xl font-semibold text-zinc-900">{count.toLocaleString()}</p>
+        <p className="text-xs text-zinc-400">messages synced</p>
+        <div className="pt-1 space-y-0.5">
+          {lastSync ? (
+            <p className="text-xs text-zinc-400">Last sync: {new Date(lastSync).toLocaleString()}</p>
+          ) : (
+            <p className="text-xs text-zinc-400">Not yet synced</p>
+          )}
+          {nextSync && (
+            <p className="text-xs text-zinc-400">Next: {new Date(nextSync).toLocaleString()}</p>
           )}
         </div>
       </div>
 
-      {/* Sync Now */}
+      {/* Schedule */}
+      <div>
+        <p className="text-xs text-zinc-400 mb-2">Auto-sync schedule</p>
+        <div className="flex items-center gap-3">
+          <select
+            value={intervalHours}
+            onChange={(e) => handleSaveInterval(Number(e.target.value))}
+            disabled={savingInterval}
+            className="flex-1 text-sm text-zinc-700 border border-zinc-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:opacity-50"
+          >
+            {INTERVAL_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          {intervalMsg && <span className="text-xs text-zinc-400">{intervalMsg}</span>}
+        </div>
+      </div>
+
+      {/* Sync now */}
       <div>
         <button
           onClick={handleSync}
           disabled={syncing}
-          className="w-full px-4 py-2 text-sm bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full px-4 py-2.5 text-sm font-medium bg-zinc-900 text-white rounded-lg hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {syncing ? "Syncing…" : "Sync Now"}
         </button>
-        {syncMsg && (
-          <p className="text-xs text-zinc-500 mt-2 text-center">{syncMsg}</p>
-        )}
+        {syncMsg && <p className="text-xs text-zinc-500 mt-2 text-center">{syncMsg}</p>}
       </div>
     </div>
   );

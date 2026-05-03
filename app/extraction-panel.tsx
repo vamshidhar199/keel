@@ -39,7 +39,6 @@ export function ExtractionPanel({
         return;
       }
       setMsg(`Processing up to ${limit} emails…`);
-      // Poll until pending count stops dropping.
       let unchanged = 0;
       while (unchanged < 3) {
         await new Promise((r) => setTimeout(r, 3000));
@@ -62,52 +61,55 @@ export function ExtractionPanel({
   }
 
   const total = pending + extracted + skipped + failed;
+  const processed = extracted + skipped;
 
   return (
-    <div className="bg-white border border-zinc-200 rounded-lg p-6 shadow-sm w-full max-w-sm space-y-5">
+    <div className="bg-white border border-zinc-200 rounded-lg p-6 space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <p className="text-xs text-zinc-400 uppercase tracking-wide">Knowledge Extraction</p>
+        <p className="text-xs text-zinc-400 uppercase tracking-wide">Extraction</p>
         {pages > 0 && (
           <span className="text-xs text-violet-600 font-medium bg-violet-50 px-2 py-0.5 rounded-full">
-            {pages} pages
+            {pages} pages created
           </span>
         )}
+      </div>
+
+      {/* Big number */}
+      <div>
+        <p className="text-2xl font-semibold text-zinc-900">{pages}</p>
+        <p className="text-xs text-zinc-400">knowledge pages</p>
       </div>
 
       {/* Progress bar */}
       {total > 0 && (
         <div>
-          <div className="flex justify-between text-xs text-zinc-400 mb-1">
-            <span>{extracted + skipped} / {total} processed</span>
-            <span>{Math.round(((extracted + skipped) / total) * 100)}%</span>
+          <div className="flex justify-between text-xs text-zinc-400 mb-1.5">
+            <span>{processed} / {total} processed</span>
+            <span>{Math.round((processed / total) * 100)}%</span>
           </div>
           <div className="w-full bg-zinc-100 rounded-full h-1.5">
             <div
-              className="bg-violet-500 h-1.5 rounded-full transition-all"
-              style={{ width: `${((extracted + skipped) / total) * 100}%` }}
+              className="bg-violet-500 h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${(processed / total) * 100}%` }}
             />
           </div>
         </div>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="bg-zinc-50 rounded p-2">
-          <p className="text-zinc-400">Pending</p>
-          <p className="font-semibold text-zinc-700">{pending}</p>
-        </div>
-        <div className="bg-emerald-50 rounded p-2">
-          <p className="text-emerald-500">Extracted</p>
-          <p className="font-semibold text-emerald-700">{extracted}</p>
-        </div>
-        <div className="bg-zinc-50 rounded p-2">
-          <p className="text-zinc-400">Skipped</p>
-          <p className="font-semibold text-zinc-500">{skipped}</p>
-        </div>
-        <div className="bg-red-50 rounded p-2">
-          <p className="text-red-400">Failed</p>
-          <p className="font-semibold text-red-600">{failed}</p>
-        </div>
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { label: "Pending", value: pending, color: "text-zinc-700" },
+          { label: "Extracted", value: extracted, color: "text-emerald-600" },
+          { label: "Skipped", value: skipped, color: "text-zinc-500" },
+          { label: "Failed", value: failed, color: "text-red-500" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="bg-zinc-50 rounded-lg p-3">
+            <p className="text-xs text-zinc-400 mb-0.5">{label}</p>
+            <p className={`text-lg font-semibold ${color}`}>{value}</p>
+          </div>
+        ))}
       </div>
 
       {/* Actions */}
@@ -115,14 +117,14 @@ export function ExtractionPanel({
         <button
           onClick={() => handleExtract(20)}
           disabled={running || pending === 0}
-          className="flex-1 px-3 py-2 text-xs bg-zinc-800 text-white rounded-lg hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="flex-1 px-3 py-2.5 text-sm font-medium bg-zinc-900 text-white rounded-lg hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {running ? "Running…" : "Extract 20"}
         </button>
         <button
           onClick={() => handleExtract(pending)}
           disabled={running || pending === 0}
-          className="flex-1 px-3 py-2 text-xs bg-violet-600 text-white rounded-lg hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="flex-1 px-3 py-2.5 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {running ? "Running…" : `Extract all (${pending})`}
         </button>

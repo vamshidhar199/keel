@@ -3,6 +3,9 @@ export async function register() {
     const { runMigrations } = await import("./lib/migrate");
     await runMigrations();
 
+    const { resetStuckJobs } = await import("./lib/queue");
+    await resetStuckJobs();
+
     const { schedulerTick } = await import("./lib/sync");
 
     // Run immediately on startup, then every 30 minutes.
