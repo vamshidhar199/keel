@@ -46,6 +46,7 @@ brew install postgresql
 colima start --cpu 2 --memory 4 --disk 20
 docker run -d \
   --name mettrie-postgres \
+  --restart unless-stopped \
   -e POSTGRES_USER=mettrie \
   -e POSTGRES_PASSWORD=mettrie_dev \
   -e POSTGRES_DB=mettrie_meta \
