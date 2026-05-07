@@ -1,4 +1,4 @@
-import { syncGmail } from "./sync";
+import { syncGmail, syncSlack } from "./sync";
 import { processRawEvent } from "./pipeline";
 import { getMetaDb } from "./db";
 
@@ -16,6 +16,7 @@ export async function resetStuckJobs(): Promise<void> {
 
 type Job =
   | { type: "sync_gmail"; userId: string }
+  | { type: "sync_slack"; userId: string }
   | { type: "extract_emails"; userId: string; limit: number };
 
 const queue: Job[] = [];
@@ -44,7 +45,14 @@ async function run(job: Job): Promise<void> {
   if (job.type === "sync_gmail") {
     const result = await syncGmail(job.userId);
     console.log(`[queue] sync_gmail user=${job.userId} new=${result.newMessages}`);
-    // Auto-trigger extraction after every sync if there are pending events.
+    if (result.newMessages > 0) {
+      enqueue({ type: "extract_emails", userId: job.userId, limit: result.newMessages });
+    }
+  }
+
+  if (job.type === "sync_slack") {
+    const result = await syncSlack(job.userId);
+    console.log(`[queue] sync_slack user=${job.userId} new=${result.newMessages}`);
     if (result.newMessages > 0) {
       enqueue({ type: "extract_emails", userId: job.userId, limit: result.newMessages });
     }

@@ -34,103 +34,105 @@ export function ExtractionPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ limit }),
       });
-      if (!res.ok) {
-        setMsg("Failed to start extraction");
-        return;
-      }
+      if (!res.ok) { setMsg("Failed to start extraction"); return; }
       setMsg(`Processing up to ${limit} emails…`);
       let unchanged = 0;
       while (unchanged < 3) {
         await new Promise((r) => setTimeout(r, 3000));
         const s = await fetch("/api/extract").then((r) => r.json());
-        setPending(s.pending);
-        setExtracted(s.extracted);
-        setSkipped(s.skipped);
-        setFailed(s.failed);
-        setPages(s.pagesCreated);
-        if (s.pending === pending) unchanged++;
-        else unchanged = 0;
+        setPending(s.pending); setExtracted(s.extracted);
+        setSkipped(s.skipped); setFailed(s.failed); setPages(s.pagesCreated);
+        if (s.pending === pending) unchanged++; else unchanged = 0;
         if (s.pending === 0) break;
       }
       setMsg("Done");
-    } catch {
-      setMsg("Network error — check server logs");
-    } finally {
-      setRunning(false);
-    }
+    } catch { setMsg("Network error — check server logs"); }
+    finally { setRunning(false); }
   }
 
   const total = pending + extracted + skipped + failed;
   const processed = extracted + skipped;
+  const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+  const STATS = [
+    { label: "Pending",   value: pending,   dotVar: "--c-muted" },
+    { label: "Extracted", value: extracted, dotVar: "--c-stat2" },
+    { label: "Skipped",   value: skipped,   dotVar: "--c-stat3" },
+    { label: "Failed",    value: failed,    dotVar: "--c-stat1" },
+  ];
 
   return (
-    <div className="bg-white border border-zinc-200 rounded-lg p-6 space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-zinc-400 uppercase tracking-wide">Extraction</p>
-        {pages > 0 && (
-          <span className="text-xs text-violet-600 font-medium bg-violet-50 px-2 py-0.5 rounded-full">
-            {pages} pages created
-          </span>
-        )}
-      </div>
-
-      {/* Big number */}
-      <div>
-        <p className="text-2xl font-semibold text-zinc-900">{pages}</p>
-        <p className="text-xs text-zinc-400">knowledge pages</p>
+    <div className="glass-card rounded-xl p-6">
+      {/* Header row */}
+      <div className="flex justify-between items-end mb-5">
+        <div>
+          <h3 className="text-2xl font-semibold" style={{ color: "var(--c-fg)" }}>Extraction Analytics</h3>
+          <p className="text-sm mt-1" style={{ color: "var(--c-subtle)" }}>Real-time status of your knowledge synthesis pipeline.</p>
+        </div>
+        <div className="text-right">
+          <span className="text-5xl font-bold" style={{ color: "var(--c-primary)" }}>{pct}%</span>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mt-1" style={{ color: "var(--c-subtle)" }}>Complete</p>
+        </div>
       </div>
 
       {/* Progress bar */}
-      {total > 0 && (
-        <div>
-          <div className="flex justify-between text-xs text-zinc-400 mb-1.5">
-            <span>{processed} / {total} processed</span>
-            <span>{Math.round((processed / total) * 100)}%</span>
-          </div>
-          <div className="w-full bg-zinc-100 rounded-full h-1.5">
-            <div
-              className="bg-violet-500 h-1.5 rounded-full transition-all duration-500"
-              style={{ width: `${(processed / total) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
+      <div className="h-3 w-full rounded-full overflow-hidden mb-6 relative" style={{ background: "var(--c-surface-low)" }}>
+        <div
+          className="absolute inset-0 rounded-full transition-all duration-500"
+          style={{
+            width: `${pct}%`,
+            background: "var(--c-gradient)",
+          }}
+        />
+      </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-2">
-        {[
-          { label: "Pending", value: pending, color: "text-zinc-700" },
-          { label: "Extracted", value: extracted, color: "text-emerald-600" },
-          { label: "Skipped", value: skipped, color: "text-zinc-500" },
-          { label: "Failed", value: failed, color: "text-red-500" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="bg-zinc-50 rounded-lg p-3">
-            <p className="text-xs text-zinc-400 mb-0.5">{label}</p>
-            <p className={`text-lg font-semibold ${color}`}>{value}</p>
+      {/* Stat cells */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        {STATS.map(({ label, value, dotVar }) => (
+          <div
+            key={label}
+            className="rounded-lg p-4"
+            style={{ background: "var(--c-surface-low)", border: "1px solid var(--c-surface-low-b)" }}
+          >
+            <p className="text-[10px] font-medium uppercase tracking-wider mb-2" style={{ color: "var(--c-subtle)" }}>{label}</p>
+            <div className="flex items-center gap-2">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ background: `var(${dotVar})` }}
+              />
+              <span className="text-2xl font-semibold" style={{ color: "var(--c-fg)" }}>{value.toLocaleString()}</span>
+            </div>
           </div>
         ))}
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2">
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={() => handleExtract(20)}
           disabled={running || pending === 0}
-          className="flex-1 px-3 py-2.5 text-sm font-medium bg-zinc-900 text-white rounded-lg hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-5 py-2.5 text-sm font-semibold rounded-xl transition-all hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "var(--c-btn-bg)", border: "1px solid var(--c-btn-border)", color: "var(--c-fg)" }}
         >
           {running ? "Running…" : "Extract 20"}
         </button>
         <button
           onClick={() => handleExtract(pending)}
           disabled={running || pending === 0}
-          className="flex-1 px-3 py-2.5 text-sm font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="vibrant-gradient px-5 py-2.5 text-sm font-semibold text-white rounded-xl transition-all hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {running ? "Running…" : `Extract all (${pending})`}
         </button>
+        {pages > 0 && (
+          <span
+            className="text-[11px] font-medium px-3 py-1.5 rounded-full ml-2"
+            style={{ background: "var(--c-primary-m)", color: "var(--c-primary)", border: "1px solid var(--c-card-border)" }}
+          >
+            {pages} pages created
+          </span>
+        )}
+        {msg && <p className="text-[11px] ml-2" style={{ color: "var(--c-subtle)" }}>{msg}</p>}
       </div>
-
-      {msg && <p className="text-xs text-zinc-400 text-center">{msg}</p>}
     </div>
   );
 }

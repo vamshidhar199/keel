@@ -11,9 +11,10 @@ export default async function AppShellLayout({
   if (!session?.user?.id) redirect("/");
 
   return (
-    <div className="flex min-h-screen bg-zinc-100">
+    <div className="min-h-screen" style={{ background: "var(--c-bg)", color: "var(--c-fg)" }}>
+      <div className="mesh-gradient-bg" />
       <Sidebar email={session.user.email ?? ""} name={session.user.name} />
-      <main className="flex-1 min-w-0">{children}</main>
+      <main className="ml-64">{children}</main>
     </div>
   );
 }

@@ -4,7 +4,6 @@ import { hasGmailScope } from "@/lib/gmail";
 import { getGmailStatus } from "@/lib/sync";
 import { getExtractionStatus } from "@/lib/pipeline";
 import { listPages } from "@/lib/gbrain";
-import { PageHeader } from "../../components/page-header";
 import { TypeBadge } from "../../components/type-badge";
 
 export default async function OverviewPage() {
@@ -14,150 +13,216 @@ export default async function OverviewPage() {
   const [gmailConnected, extractionStatus, recentPages] = await Promise.all([
     hasGmailScope(userId),
     getExtractionStatus(userId),
-    listPages(userId, { limit: 8 }),
+    listPages(userId, { limit: 6 }),
   ]);
-  const gmailStatus = gmailConnected
-    ? await getGmailStatus(userId)
-    : null;
-
+  const gmailStatus = gmailConnected ? await getGmailStatus(userId) : null;
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
 
   return (
-    <div>
-      <PageHeader title={`Welcome back, ${firstName}`} subtitle="Your knowledge at a glance" />
+    <div className="min-h-screen">
+      {/* Sticky header */}
+      <header className="header-glass sticky top-0 h-16 flex items-center justify-between px-6 z-30">
+        <h1 className="text-2xl font-bold" style={{ color: "var(--c-fg)" }}>Overview</h1>
+        <div className="glass-card px-4 py-2 rounded-xl flex items-center gap-3">
+          <div className="p-1.5 rounded-lg" style={{ background: "var(--c-stat2-icon)" }}>
+            <span className="material-symbols-outlined text-[18px] leading-none" style={{ color: "var(--c-stat2)" }}>visibility</span>
+          </div>
+          <div>
+            <p className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--c-subtle)" }}>System Status</p>
+            <p className="text-[13px] font-bold" style={{ color: "var(--c-stat2)" }}>Active</p>
+          </div>
+        </div>
+      </header>
 
-      <div className="max-w-5xl mx-auto px-8 py-8 space-y-8">
-        {/* Quick stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <Stat
-            label="Pages"
+      <div className="p-10 max-w-7xl mx-auto space-y-10">
+        {/* Welcome hero */}
+        <section>
+          <h2 className="text-5xl font-bold tracking-tight" style={{ color: "var(--c-fg)" }}>
+            Welcome back, {firstName}.
+          </h2>
+          <p className="text-lg mt-2" style={{ color: "var(--c-muted)" }}>Your personal knowledge system is ready.</p>
+        </section>
+
+        {/* Stats grid */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <StatCard
+            icon="description"
+            statVar="stat1"
             value={extractionStatus.pagesCreated}
+            label="Pages Indexed"
+            badge={extractionStatus.pagesCreated > 0 ? `${extractionStatus.pagesCreated} total` : "None yet"}
             href="/pages"
           />
-          <Stat
-            label="Extracted"
+          <StatCard
+            icon="auto_awesome"
+            statVar="stat2"
             value={extractionStatus.extracted}
-            sublabel={`of ${extractionStatus.total} emails`}
+            label="Emails Extracted"
+            badge={`of ${extractionStatus.total}`}
             href="/sources"
           />
-          <Stat
-            label="Pending"
+          <StatCard
+            icon="pending_actions"
+            statVar="stat3"
             value={extractionStatus.pending}
-            sublabel="emails to process"
+            label="Pending Analysis"
+            badge={extractionStatus.pending > 0 ? "Action Needed" : "All clear"}
             href="/sources"
-            highlight={extractionStatus.pending > 0}
           />
-        </div>
+        </section>
 
-        {/* Ask shortcut */}
-        <div className="bg-white border border-zinc-200 rounded-lg p-6">
-          <p className="text-xs text-zinc-400 uppercase tracking-wide mb-3">Ask</p>
+        {/* Ask bar */}
+        <section className="relative group">
+          <div
+            className="absolute -inset-px rounded-2xl opacity-25 group-hover:opacity-75 transition duration-500 blur-sm"
+            style={{ background: "var(--c-gradient)" }}
+          />
           <Link
             href="/ask"
-            className="block text-sm text-zinc-400 border border-zinc-200 rounded-md px-3 py-2.5 hover:border-zinc-300 hover:text-zinc-600 transition-colors"
+            className="relative glass-card rounded-2xl p-4 flex items-center shadow-2xl block"
           >
-            Ask anything about your knowledge…
+            <span className="flex-grow text-base px-2" style={{ color: "var(--c-muted)" }}>
+              Ask Mettrie anything about your knowledge base…
+            </span>
           </Link>
-        </div>
-
-        {/* Recent pages */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs text-zinc-400 uppercase tracking-wide">Recent pages</p>
-            <Link
-              href="/pages"
-              className="text-xs text-zinc-500 hover:text-zinc-700 transition-colors"
-            >
-              View all →
-            </Link>
-          </div>
-
-          {recentPages.length === 0 ? (
-            <div className="bg-white border border-zinc-200 rounded-lg p-8 text-center">
-              <p className="text-sm text-zinc-500">
-                No pages yet.{" "}
-                <Link href="/sources" className="text-violet-600 hover:underline">
-                  Connect Gmail
-                </Link>{" "}
-                to start.
-              </p>
-            </div>
-          ) : (
-            <ul className="bg-white border border-zinc-200 rounded-lg divide-y divide-zinc-100">
-              {recentPages.map((p) => (
-                <li key={p.slug}>
-                  <Link
-                    href={`/pages/${p.slug}`}
-                    className="flex items-center justify-between px-4 py-2.5 hover:bg-zinc-50 transition-colors"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-zinc-800 truncate">{p.title}</p>
-                      <p className="text-xs text-zinc-400 font-mono mt-0.5 truncate">{p.slug}</p>
-                    </div>
-                    <TypeBadge type={p.type} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
         </section>
 
-        {/* Source status */}
-        <section>
-          <p className="text-xs text-zinc-400 uppercase tracking-wide mb-3">Sources</p>
-          <Link
-            href="/sources"
-            className="block bg-white border border-zinc-200 rounded-lg p-4 hover:border-zinc-300 transition-colors"
-          >
+        {/* Bento grid */}
+        <div className="grid grid-cols-12 gap-6">
+          {/* Recent pages */}
+          <section className="col-span-12 lg:col-span-8 space-y-4">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-zinc-800">Gmail</p>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  {gmailConnected
-                    ? `${gmailStatus?.messageCount ?? 0} messages synced`
-                    : "Not connected"}
+              <h3 className="text-2xl font-semibold" style={{ color: "var(--c-fg)" }}>Recent Intelligence</h3>
+              <Link href="/pages" className="text-[12px] font-medium hover:underline" style={{ color: "var(--c-primary)" }}>
+                View all pages
+              </Link>
+            </div>
+
+            {recentPages.length === 0 ? (
+              <div className="glass-card rounded-xl p-8 text-center">
+                <p className="text-sm" style={{ color: "var(--c-muted)" }}>
+                  No pages yet.{" "}
+                  <Link href="/sources" className="hover:underline" style={{ color: "var(--c-primary)" }}>
+                    Connect Gmail
+                  </Link>{" "}
+                  to start.
                 </p>
               </div>
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  gmailConnected ? "bg-emerald-500" : "bg-zinc-300"
-                }`}
-              />
-            </div>
-          </Link>
-        </section>
+            ) : (
+              <div className="space-y-3">
+                {recentPages.map((p) => (
+                  <Link
+                    key={p.slug}
+                    href={`/pages/${p.slug}`}
+                    className="glass-card p-5 rounded-xl flex items-center gap-5 group block"
+                  >
+                    <div className="flex-grow space-y-1 min-w-0">
+                      <h4 className="text-sm font-bold truncate" style={{ color: "var(--c-fg)" }}>{p.title}</h4>
+                      <p className="text-xs font-mono truncate" style={{ color: "var(--c-subtle)" }}>{p.slug}</p>
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        <TypeBadge type={p.type} />
+                        {p.link_count > 0 && (
+                          <span className="text-[10px]" style={{ color: "var(--c-subtle)" }}>
+                            {p.link_count} link{p.link_count === 1 ? "" : "s"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity leading-none" style={{ color: "var(--c-muted)" }}>
+                      chevron_right
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Right column */}
+          <section className="col-span-12 lg:col-span-4 space-y-4">
+            <h3 className="text-2xl font-semibold" style={{ color: "var(--c-fg)" }}>Knowledge Graph</h3>
+            <Link
+              href="/graph"
+              className="glass-card rounded-2xl overflow-hidden relative group block"
+              style={{ height: "200px" }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center space-y-2">
+                  <span className="material-symbols-outlined text-5xl leading-none block" style={{ color: "var(--c-primary)" }}>account_tree</span>
+                  <p className="text-sm" style={{ color: "var(--c-muted)" }}>Explore Connections</p>
+                </div>
+              </div>
+              <div className="absolute bottom-4 left-4 right-4">
+                <div className="glass-panel p-3 rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: "var(--c-fg)" }}>View Graph</p>
+                      <p className="text-xs" style={{ color: "var(--c-subtle)" }}>How your data interconnects</p>
+                    </div>
+                    <span className="material-symbols-outlined text-xl leading-none" style={{ color: "var(--c-primary)" }}>open_in_full</span>
+                  </div>
+                </div>
+              </div>
+            </Link>
+
+            <Link href="/sources" className="glass-card p-5 rounded-xl block">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-xl leading-none" style={{ color: "var(--c-stat2)" }}>email</span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: "var(--c-fg)" }}>Gmail</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-subtle)" }}>
+                      {gmailConnected
+                        ? `${gmailStatus?.messageCount ?? 0} messages synced`
+                        : "Not connected"}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ background: gmailConnected ? "var(--c-connected-text)" : "var(--c-subtle)" }}
+                />
+              </div>
+            </Link>
+          </section>
+        </div>
       </div>
     </div>
   );
 }
 
-function Stat({
-  label,
-  value,
-  sublabel,
-  href,
-  highlight,
+function StatCard({
+  icon, statVar, value, label, badge, href,
 }: {
-  label: string;
+  icon: string;
+  statVar: "stat1" | "stat2" | "stat3";
   value: number;
-  sublabel?: string;
+  label: string;
+  badge?: string;
   href: string;
-  highlight?: boolean;
 }) {
   return (
     <Link
       href={href}
-      className="bg-white border border-zinc-200 rounded-lg p-5 hover:border-zinc-300 transition-colors block"
+      className="glass-card p-8 rounded-xl space-y-4 block border-l-4"
+      style={{ borderLeftColor: `var(--c-${statVar})` }}
     >
-      <p className="text-xs text-zinc-400 uppercase tracking-wide">{label}</p>
-      <p
-        className={`text-2xl font-semibold mt-1 ${
-          highlight ? "text-violet-600" : "text-zinc-900"
-        }`}
-      >
-        {value}
-      </p>
-      {sublabel && <p className="text-xs text-zinc-400 mt-0.5">{sublabel}</p>}
+      <div className="flex justify-between items-start">
+        <span
+          className="material-symbols-outlined p-2 rounded-lg text-xl leading-none"
+          style={{ color: `var(--c-${statVar})`, background: `var(--c-${statVar}-icon)` }}
+        >
+          {icon}
+        </span>
+        {badge && (
+          <span className="text-sm font-bold" style={{ color: `var(--c-${statVar})` }}>
+            {badge}
+          </span>
+        )}
+      </div>
+      <div>
+        <p className="text-3xl font-semibold" style={{ color: "var(--c-fg)" }}>{value.toLocaleString()}</p>
+        <p className="text-[11px] font-medium uppercase tracking-wider mt-1" style={{ color: "var(--c-subtle)" }}>{label}</p>
+      </div>
     </Link>
   );
 }

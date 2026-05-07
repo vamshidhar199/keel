@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { brainSearch } from "@/lib/gbrain";
+import { brainSearch, findEntityPages, getEntityChunks } from "@/lib/gbrain";
 import { synthesizeAnswer } from "@/lib/synthesize";
 
 export async function POST(req: NextRequest) {
@@ -20,12 +20,29 @@ export async function POST(req: NextRequest) {
     Array.isArray(body.history) ? body.history : [];
 
   try {
-    const hits = await brainSearch(session.user.id, question, limit);
+    // Run vector search and entity detection in parallel.
+    const [vectorHits, entityPages] = await Promise.all([
+      brainSearch(session.user.id, question, limit),
+      findEntityPages(session.user.id, question),
+    ]);
+
+    // Fetch full chunks for any entity pages found, then merge:
+    // entity chunks first (score=1.0), then vector hits (deduped by chunk_id).
+    const entityHits = await getEntityChunks(
+      session.user.id,
+      entityPages.map((p) => p.slug)
+    );
+    const seenIds = new Set(entityHits.map((h) => h.chunk_id));
+    const hits = [
+      ...entityHits,
+      ...vectorHits.filter((h) => !seenIds.has(h.chunk_id)),
+    ];
 
     if (hits.length === 0) {
       return NextResponse.json({
         answer: "Nothing in your knowledge base matches that question yet.",
         citations: [],
+        webCitations: [],
         invalidCitations: [],
         hits: [],
       });

@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gbrain_spike
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gbrain_spike"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  gbrain:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GBRAIN_DATABASE_URL: postgresql://postgres:postgres@db:5432/gbrain_spike

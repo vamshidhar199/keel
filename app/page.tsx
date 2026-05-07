@@ -6,17 +6,25 @@ export default async function Home() {
   if (session?.user?.id) redirect("/overview");
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center px-4">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-4"
+      style={{ background: "var(--c-bg)" }}
+    >
       <div className="w-full max-w-sm">
-        {/* Wordmark */}
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">mettrie</h1>
-          <p className="text-sm text-zinc-500 mt-2">Your self-improving knowledge system</p>
+          <h1
+            className="text-4xl font-bold bg-clip-text text-transparent"
+            style={{ backgroundImage: "var(--c-gradient)" }}
+          >
+            Mettrie
+          </h1>
+          <p className="text-sm mt-2 tracking-wide" style={{ color: "var(--c-subtle)" }}>
+            Your self-improving knowledge system
+          </p>
         </div>
 
-        {/* Sign-in card */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-8">
-          <p className="text-sm font-medium text-zinc-700 mb-5 text-center">Sign in to continue</p>
+        <div className="glass-card rounded-2xl p-8">
+          <p className="text-sm font-medium mb-6 text-center" style={{ color: "var(--c-fg)" }}>Sign in to continue</p>
           <form
             action={async () => {
               "use server";
@@ -25,7 +33,12 @@ export default async function Home() {
           >
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-3 px-5 py-2.5 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors text-zinc-700 font-medium text-sm"
+              className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-xl font-medium text-sm transition-all hover:brightness-110"
+              style={{
+                background: "var(--c-btn-bg)",
+                border: "1px solid var(--c-btn-border)",
+                color: "var(--c-fg)",
+              }}
             >
               <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -38,7 +51,7 @@ export default async function Home() {
           </form>
         </div>
 
-        <p className="text-xs text-zinc-400 text-center mt-6">
+        <p className="text-[11px] text-center mt-6" style={{ color: "var(--c-subtle)" }}>
           By signing in you grant read-only access to your Gmail.
         </p>
       </div>

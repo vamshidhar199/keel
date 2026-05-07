@@ -19,7 +19,7 @@ function renderBody(body: string): React.ReactNode[] {
     }
     const slug = match[1];
     parts.push(
-      <Link key={key++} href={`/pages/${slug}`} className="text-violet-600 hover:underline">
+      <Link key={key++} href={`/pages/${slug}`} className="hover:underline" style={{ color: "var(--c-primary)" }}>
         {slug}
       </Link>
     );
@@ -56,7 +56,7 @@ export default async function PageDetail({
   );
 
   return (
-    <div>
+    <div className="min-h-screen">
       <PageHeader
         title={page.title}
         crumbs={[{ href: "/pages", label: "Pages" }]}
@@ -68,25 +68,25 @@ export default async function PageDetail({
         }
       />
 
-      <div className="max-w-3xl mx-auto px-8 py-8 space-y-4">
-        <p className="text-xs text-zinc-400 font-mono">{page.slug}</p>
+      <div className="max-w-3xl mx-auto px-6 py-8 space-y-4">
+        <p className="text-[11px] font-mono" style={{ color: "var(--c-subtle)" }}>{page.slug}</p>
 
         {/* Body */}
-        <div className="bg-white border border-zinc-200 rounded-lg p-6">
-          <div className="text-sm text-zinc-700 leading-relaxed whitespace-pre-wrap">
+        <div className="glass-card rounded-xl p-6">
+          <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-fg)" }}>
             {renderBody(page.body)}
           </div>
         </div>
 
         {/* Frontmatter attributes */}
         {otherFrontmatter.length > 0 && (
-          <div className="bg-white border border-zinc-200 rounded-lg p-6">
-            <p className="text-xs text-zinc-400 uppercase tracking-wide mb-3">Attributes</p>
+          <div className="glass-card rounded-xl p-6">
+            <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>Attributes</p>
             <dl className="space-y-2 text-sm">
               {otherFrontmatter.map(([k, v]) => (
                 <div key={k} className="flex gap-3">
-                  <dt className="text-zinc-500 w-1/3 shrink-0">{k}</dt>
-                  <dd className="text-zinc-700 font-mono text-xs break-all">
+                  <dt className="w-1/3 shrink-0 text-[12px]" style={{ color: "var(--c-muted)" }}>{k}</dt>
+                  <dd className="font-mono text-[11px] break-all" style={{ color: "var(--c-fg)" }}>
                     {typeof v === "string" ? v : JSON.stringify(v)}
                   </dd>
                 </div>
@@ -97,17 +97,17 @@ export default async function PageDetail({
 
         {/* Backlinks */}
         {backlinks.length > 0 && (
-          <div className="bg-white border border-zinc-200 rounded-lg p-6">
-            <p className="text-xs text-zinc-400 uppercase tracking-wide mb-3">
+          <div className="glass-card rounded-xl p-6">
+            <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>
               Linked from ({backlinks.length})
             </p>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {backlinks.map((b) => (
-                <li key={b.slug} className="flex items-center gap-2 text-sm">
-                  <Link href={`/pages/${b.slug}`} className="text-violet-600 hover:underline">
+                <li key={b.slug} className="flex items-center gap-3 text-sm">
+                  <Link href={`/pages/${b.slug}`} className="hover:underline" style={{ color: "var(--c-primary)" }}>
                     {b.title}
                   </Link>
-                  <span className="text-xs text-zinc-400 font-mono">{b.slug}</span>
+                  <span className="text-[10px] font-mono" style={{ color: "var(--c-subtle)" }}>{b.slug}</span>
                 </li>
               ))}
             </ul>
@@ -116,15 +116,15 @@ export default async function PageDetail({
 
         {/* Evidence */}
         {evidence.length > 0 && (
-          <div className="bg-white border border-zinc-200 rounded-lg p-6">
-            <p className="text-xs text-zinc-400 uppercase tracking-wide mb-3">
+          <div className="glass-card rounded-xl p-6">
+            <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>
               Evidence ({evidence.length})
             </p>
-            <ul className="space-y-1.5 text-xs">
+            <ul className="space-y-1.5 text-[11px]">
               {evidence.map((e, i) => (
-                <li key={i} className="font-mono text-zinc-500">
+                <li key={i} className="font-mono" style={{ color: "var(--c-muted)" }}>
                   {e.source ?? "?"} · {e.date ?? "?"}{" "}
-                  <span className="text-zinc-400">{e.event_id ?? ""}</span>
+                  <span style={{ color: "var(--c-subtle)" }}>{e.event_id ?? ""}</span>
                 </li>
               ))}
             </ul>

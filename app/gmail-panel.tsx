@@ -32,135 +32,143 @@ export function GmailPanel({
   const [intervalHours, setIntervalHours] = useState(initialInterval);
   const [savingInterval, setSavingInterval] = useState(false);
   const [intervalMsg, setIntervalMsg] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   async function handleSync() {
-    setSyncing(true);
-    setSyncMsg(null);
+    setSyncing(true); setSyncMsg(null);
     try {
       const res = await fetch("/api/gmail/sync", { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json();
-        setSyncMsg(`Error: ${body.error}`);
-        return;
-      }
+      if (!res.ok) { const b = await res.json(); setSyncMsg(`Error: ${b.error}`); return; }
       await new Promise((r) => setTimeout(r, 2500));
-      const statusRes = await fetch("/api/gmail/status");
-      if (statusRes.ok) {
-        const status = await statusRes.json();
-        setCount(status.messageCount ?? count);
-        setLastSync(status.lastSyncedAt ?? lastSync);
-        setNextSync(status.nextSyncAt ?? nextSync);
+      const s = await fetch("/api/gmail/status");
+      if (s.ok) {
+        const d = await s.json();
+        setCount(d.messageCount ?? count);
+        setLastSync(d.lastSyncedAt ?? lastSync);
+        setNextSync(d.nextSyncAt ?? nextSync);
         setSyncMsg("Sync complete");
       }
-    } catch {
-      setSyncMsg("Network error — try again");
-    } finally {
-      setSyncing(false);
-    }
+    } catch { setSyncMsg("Network error"); }
+    finally { setSyncing(false); }
   }
 
   async function handleSaveInterval(newHours: number) {
-    setSavingInterval(true);
-    setIntervalMsg(null);
+    setSavingInterval(true); setIntervalMsg(null);
     try {
       const res = await fetch("/api/gmail/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ syncIntervalHours: newHours }),
       });
-      if (!res.ok) {
-        setIntervalMsg("Failed to save");
-        return;
-      }
-      setIntervalHours(newHours);
-      setIntervalMsg("Saved");
+      if (!res.ok) { setIntervalMsg("Failed"); return; }
+      setIntervalHours(newHours); setIntervalMsg("Saved");
       setTimeout(() => setIntervalMsg(null), 2000);
-      if (lastSync) {
-        const next = new Date(lastSync);
-        next.setHours(next.getHours() + newHours);
-        setNextSync(next.toISOString());
-      }
-    } catch {
-      setIntervalMsg("Network error");
-    } finally {
-      setSavingInterval(false);
-    }
+      if (lastSync) { const n = new Date(lastSync); n.setHours(n.getHours() + newHours); setNextSync(n.toISOString()); }
+    } catch { setIntervalMsg("Error"); }
+    finally { setSavingInterval(false); }
   }
 
   if (!connected) {
     return (
-      <div className="bg-white border border-zinc-200 rounded-lg p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-zinc-400 uppercase tracking-wide">Gmail</p>
-          <span className="text-xs text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full font-medium">
-            Not connected
-          </span>
+      <div
+        className="glass-card rounded-xl p-6 flex flex-col justify-between min-h-[220px] transition-all"
+        style={{ borderStyle: "dashed" }}
+      >
+        <div className="flex justify-between items-start">
+          <div
+            className="w-12 h-12 rounded-xl flex items-center justify-center"
+            style={{ background: "var(--c-stat3-icon)", border: "1px solid var(--c-card-border)" }}
+          >
+            <span className="material-symbols-outlined text-xl leading-none" style={{ color: "var(--c-stat3)", fontVariationSettings: "'FILL' 1" }}>mail</span>
+          </div>
         </div>
-        <p className="text-sm text-zinc-500">
-          Gmail access not granted. Sign out and sign back in to connect.
-        </p>
-        <p className="text-xs text-zinc-400">
-          Your next sign-in will request{" "}
-          <code className="bg-zinc-100 px-1 py-0.5 rounded text-zinc-600">gmail.readonly</code> access.
-        </p>
+        <div className="mt-4">
+          <h4 className="text-xl font-semibold" style={{ color: "var(--c-fg)" }}>Gmail</h4>
+          <p className="text-sm mt-1" style={{ color: "var(--c-subtle)" }}>Auto-extract context from threads and meeting invites.</p>
+        </div>
+        <p className="text-xs mt-4" style={{ color: "var(--c-subtle)" }}>Sign out and sign in again to grant Gmail access.</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white border border-zinc-200 rounded-lg p-6 space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-zinc-400 uppercase tracking-wide">Gmail</p>
-        <span className="text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full">
+    <div className="glass-card rounded-xl p-6 flex flex-col justify-between min-h-[220px] transition-all">
+      {/* Top */}
+      <div className="flex justify-between items-start">
+        <div
+          className="w-12 h-12 rounded-xl flex items-center justify-center"
+          style={{ background: "var(--c-stat3-icon)", border: "1px solid var(--c-card-border)" }}
+        >
+          <span className="material-symbols-outlined text-xl leading-none" style={{ color: "var(--c-stat3)", fontVariationSettings: "'FILL' 1" }}>mail</span>
+        </div>
+        <span
+          className="text-[11px] font-medium px-3 py-1 rounded-full"
+          style={{
+            background: "var(--c-connected-bg)",
+            color: "var(--c-connected-text)",
+            border: "1px solid var(--c-connected-border)",
+          }}
+        >
           Connected
         </span>
       </div>
 
-      {/* Stats */}
-      <div className="space-y-1">
-        <p className="text-2xl font-semibold text-zinc-900">{count.toLocaleString()}</p>
-        <p className="text-xs text-zinc-400">messages synced</p>
-        <div className="pt-1 space-y-0.5">
-          {lastSync ? (
-            <p className="text-xs text-zinc-400">Last sync: {new Date(lastSync).toLocaleString()}</p>
-          ) : (
-            <p className="text-xs text-zinc-400">Not yet synced</p>
-          )}
-          {nextSync && (
-            <p className="text-xs text-zinc-400">Next: {new Date(nextSync).toLocaleString()}</p>
-          )}
-        </div>
+      {/* Info */}
+      <div className="mt-4">
+        <h4 className="text-xl font-semibold" style={{ color: "var(--c-fg)" }}>Gmail</h4>
+        <p className="text-sm mt-1" style={{ color: "var(--c-subtle)" }}>Auto-extract context from threads and meeting invites.</p>
       </div>
 
-      {/* Schedule */}
-      <div>
-        <p className="text-xs text-zinc-400 mb-2">Auto-sync schedule</p>
-        <div className="flex items-center gap-3">
-          <select
-            value={intervalHours}
-            onChange={(e) => handleSaveInterval(Number(e.target.value))}
-            disabled={savingInterval}
-            className="flex-1 text-sm text-zinc-700 border border-zinc-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:opacity-50"
+      {/* Settings drawer */}
+      {showSettings && (
+        <div className="mt-4 space-y-2">
+          <div className="flex items-center gap-3">
+            <select
+              value={intervalHours}
+              onChange={(e) => handleSaveInterval(Number(e.target.value))}
+              disabled={savingInterval}
+              className="flex-1 text-sm rounded-lg px-3 py-2 focus:outline-none disabled:opacity-50"
+              style={{ background: "var(--c-card)", border: "1px solid var(--c-card-border)", color: "var(--c-fg)" }}
+            >
+              {INTERVAL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            {intervalMsg && <span className="text-[11px]" style={{ color: "var(--c-stat2)" }}>{intervalMsg}</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom row */}
+      <div className="mt-4 flex items-center justify-between">
+        <div>
+          <p className="text-[11px]" style={{ color: "var(--c-subtle)" }}>
+            {lastSync ? `Last sync: ${new Date(lastSync).toLocaleString()}` : "Not yet synced"}
+          </p>
+          {count > 0 && <p className="text-[11px]" style={{ color: "var(--c-subtle)" }}>{count.toLocaleString()} messages</p>}
+          {syncMsg && <p className="text-[11px] mt-0.5" style={{ color: "var(--c-stat2)" }}>{syncMsg}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSettings((v) => !v)}
+            className="p-1.5 transition-colors rounded-lg"
+            style={{ color: "var(--c-subtle)" }}
           >
-            {INTERVAL_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          {intervalMsg && <span className="text-xs text-zinc-400">{intervalMsg}</span>}
+            <span className="material-symbols-outlined text-[18px] leading-none">settings</span>
+          </button>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="p-1.5 transition-colors rounded-lg disabled:opacity-40"
+            style={{ color: "var(--c-subtle)" }}
+          >
+            <span
+              className="material-symbols-outlined text-[18px] leading-none"
+              style={syncing ? { animation: "spin 1s linear infinite" } : undefined}
+            >
+              refresh
+            </span>
+          </button>
         </div>
-      </div>
-
-      {/* Sync now */}
-      <div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="w-full px-4 py-2.5 text-sm font-medium bg-zinc-900 text-white rounded-lg hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {syncing ? "Syncing…" : "Sync Now"}
-        </button>
-        {syncMsg && <p className="text-xs text-zinc-500 mt-2 text-center">{syncMsg}</p>}
       </div>
     </div>
   );

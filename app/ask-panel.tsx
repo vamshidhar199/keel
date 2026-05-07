@@ -8,6 +8,12 @@ interface Citation {
   title: string;
 }
 
+interface WebCitation {
+  id: number;
+  title: string;
+  url: string;
+}
+
 interface Hit {
   chunk_id: number;
   slug: string;
@@ -18,6 +24,7 @@ interface Hit {
 interface QueryResponse {
   answer: string;
   citations: Citation[];
+  webCitations: WebCitation[];
   invalidCitations: number[];
   hits: Hit[];
 }
@@ -99,7 +106,7 @@ export function AskPanel() {
           {result.citations.length > 0 && (
             <div className="border-t border-zinc-100 pt-3">
               <p className="text-xs text-zinc-400 uppercase tracking-wide mb-2">
-                Sources
+                Knowledge base
               </p>
               <ul className="space-y-1">
                 {result.citations.map((c) => (
@@ -109,6 +116,28 @@ export function AskPanel() {
                     </span>{" "}
                     {c.title}{" "}
                     <span className="text-zinc-400 font-mono">{c.slug}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.webCitations && result.webCitations.length > 0 && (
+            <div className="border-t border-zinc-100 pt-3">
+              <p className="text-xs text-zinc-400 uppercase tracking-wide mb-2">
+                Web
+              </p>
+              <ul className="space-y-1">
+                {result.webCitations.map((w) => (
+                  <li key={w.id} className="text-xs">
+                    <a
+                      href={w.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline"
+                    >
+                      {w.title}
+                    </a>
                   </li>
                 ))}
               </ul>

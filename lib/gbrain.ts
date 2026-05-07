@@ -114,6 +114,57 @@ export async function brainSearch(
   }
 }
 
+// Find pages whose title appears as a substring of the question (entity detection).
+// Used to surface the full compiled entity page alongside vector search results.
+export async function findEntityPages(
+  userId: string,
+  question: string
+): Promise<{ slug: string; title: string; type: string }[]> {
+  const db = getGbrainDb(userId);
+  try {
+    const { rows } = await db.query<{ slug: string; title: string; type: string }>(
+      `SELECT slug, title, type
+       FROM pages
+       WHERE length(title) >= 4
+         AND $1 ILIKE '%' || title || '%'
+       ORDER BY length(title) DESC
+       LIMIT 3`,
+      [question]
+    );
+    return rows;
+  } finally {
+    await db.end();
+  }
+}
+
+// Fetch all content chunks for the given page slugs as BrainSearchHit rows.
+// Score is set to 1.0 so entity chunks sort before vector hits when merged.
+export async function getEntityChunks(
+  userId: string,
+  slugs: string[]
+): Promise<BrainSearchHit[]> {
+  if (slugs.length === 0) return [];
+  const db = getGbrainDb(userId);
+  try {
+    const { rows } = await db.query<BrainSearchHit>(
+      `SELECT cc.id   AS chunk_id,
+              cc.page_id,
+              p.slug,
+              p.title,
+              cc.chunk_text,
+              1.0::float AS score
+       FROM content_chunks cc
+       JOIN pages p ON p.id = cc.page_id
+       WHERE p.slug = ANY($1)
+       ORDER BY p.slug, cc.id`,
+      [slugs]
+    );
+    return rows;
+  } finally {
+    await db.end();
+  }
+}
+
 export interface PageSummary {
   slug: string;
   title: string;
