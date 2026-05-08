@@ -88,6 +88,14 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
 
 ALTER TABLE sync_cursors
   ADD COLUMN IF NOT EXISTS sync_interval_hours INT NOT NULL DEFAULT 24;
+
+CREATE TABLE IF NOT EXISTS user_api_keys (
+  user_id UUID NOT NULL,
+  anthropic_api_key TEXT,
+  openai_api_key TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT user_api_keys_pkey PRIMARY KEY (user_id)
+);
 `;
 
 export async function runMigrations(): Promise<void> {

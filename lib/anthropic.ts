@@ -1,7 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getMetaDb } from "./db";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+async function getClient(userId: string): Promise<Anthropic> {
+  const db = getMetaDb();
+  const { rows } = await db.query(
+    "SELECT anthropic_api_key FROM user_api_keys WHERE user_id = $1",
+    [userId]
+  );
+  const key = process.env.ANTHROPIC_API_KEY || rows[0]?.anthropic_api_key;
+  if (!key) throw new Error("No Anthropic API key configured for this user");
+  return new Anthropic({ apiKey: key });
+}
 
 // Model constants — change here to upgrade globally.
 export const HAIKU = "claude-haiku-4-5-20251001";
@@ -59,7 +68,8 @@ export async function callClaude(
 ): Promise<string> {
   await checkDailyCap(userId);
 
-  const response = await client.messages.create({
+  const anthropic = await getClient(userId);
+  const response = await anthropic.messages.create({
     model,
     max_tokens: opts.maxTokens ?? 4096,
     system: opts.system,
@@ -84,7 +94,8 @@ export async function callClaudeWithWebSearch(
 ): Promise<{ text: string; webCitations: WebCitation[] }> {
   await checkDailyCap(userId);
 
-  const response = await client.messages.create({
+  const anthropic = await getClient(userId);
+  const response = await anthropic.messages.create({
     model,
     max_tokens: opts.maxTokens ?? 4096,
     system: opts.system,

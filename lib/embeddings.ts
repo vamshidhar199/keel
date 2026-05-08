@@ -1,15 +1,15 @@
 import OpenAI from "openai";
 import { getMetaDb } from "./db";
 
-let _client: OpenAI | undefined;
-function client(): OpenAI {
-  if (!_client) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not set — required for vector search");
-    }
-    _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  }
-  return _client;
+async function getClient(userId: string): Promise<OpenAI> {
+  const db = getMetaDb();
+  const { rows } = await db.query(
+    "SELECT openai_api_key FROM user_api_keys WHERE user_id = $1",
+    [userId]
+  );
+  const key = process.env.OPENAI_API_KEY || rows[0]?.openai_api_key;
+  if (!key) throw new Error("No OpenAI API key configured for this user");
+  return new OpenAI({ apiKey: key });
 }
 
 // Must match the model + dimensions gbrain uses for content_chunks.embedding (vector(1536)).
@@ -47,7 +47,8 @@ async function logCost(userId: string, inputTokens: number): Promise<void> {
 export async function embedText(userId: string, text: string): Promise<number[]> {
   await checkDailyCap(userId);
 
-  const response = await client().embeddings.create({
+  const openai = await getClient(userId);
+  const response = await openai.embeddings.create({
     model: EMBEDDING_MODEL,
     input: text,
     dimensions: EMBEDDING_DIMS,

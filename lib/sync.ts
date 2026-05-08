@@ -173,7 +173,7 @@ export async function syncSlack(userId: string): Promise<SyncResult> {
   // Sync DMs, group DMs, and private channels (highest signal).
   const allConversations = await listConversations(userId);
   const toSync = allConversations.filter(
-    (c) => c.kind === "im" || c.kind === "mpim" || c.kind === "private_channel"
+    (c) => c.kind === "im" || c.kind === "mpim" || c.kind === "private_channel" || c.kind === "public_channel"
   );
 
   // Collect all messages across conversations.

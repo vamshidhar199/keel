@@ -1,10 +1,24 @@
 import { auth, signOut } from "@/auth";
+import { getMetaDb } from "@/lib/db";
 import { PageHeader } from "../../components/page-header";
 import { ThemeToggle } from "../../components/theme-toggle";
+import { ApiKeysPanel } from "./api-keys-panel";
+
+function maskKey(key: string | null): string | null {
+  if (!key) return null;
+  return key.slice(0, 8) + "••••••••••••••••";
+}
 
 export default async function SettingsPage() {
   const session = await auth();
   const user = session!.user!;
+
+  const db = getMetaDb();
+  const { rows } = await db.query(
+    "SELECT anthropic_api_key, openai_api_key FROM user_api_keys WHERE user_id = $1",
+    [user.id]
+  );
+  const savedKeys = rows[0] ?? null;
 
   return (
     <div className="min-h-screen">
@@ -38,6 +52,15 @@ export default async function SettingsPage() {
           <div className="glass-card rounded-xl px-5 py-4">
             <ThemeToggle />
           </div>
+        </section>
+
+        {/* Developer */}
+        <section>
+          <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>Developer</p>
+          <ApiKeysPanel
+            initialAnthropicKey={maskKey(savedKeys?.anthropic_api_key ?? null)}
+            initialOpenaiKey={maskKey(savedKeys?.openai_api_key ?? null)}
+          />
         </section>
 
         {/* Sign out */}
