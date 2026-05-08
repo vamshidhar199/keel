@@ -30,5 +30,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+ENV HOSTNAME=0.0.0.0
 EXPOSE 3000
 CMD ["bun", "server.js"]
