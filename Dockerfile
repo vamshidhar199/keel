@@ -17,8 +17,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-# Install gbrain CLI
-RUN bun install -g gbrain
+# Install gbrain CLI and verify it's at the expected location
+RUN BUN_INSTALL=/root/.bun bun install -g gbrain \
+  && (test -x /root/.bun/bin/gbrain || \
+      (FOUND=$(find / -name gbrain -type l 2>/dev/null -not -path "*/node_modules/*" | head -1) \
+       && echo "gbrain found at $FOUND, linking..." \
+       && mkdir -p /root/.bun/bin \
+       && ln -sf "$FOUND" /root/.bun/bin/gbrain)) \
+  && test -x /root/.bun/bin/gbrain \
+  && echo "gbrain ready at /root/.bun/bin/gbrain"
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
