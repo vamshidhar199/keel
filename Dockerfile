@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 # Install gbrain CLI
-RUN git clone --depth 1 https://github.com/garrytan/gbrain.git /opt/gbrain \
-  && cd /opt/gbrain && bun install && bun link
+RUN bun install -g gbrain
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
