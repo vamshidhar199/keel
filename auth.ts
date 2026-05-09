@@ -51,6 +51,22 @@ const nextAuth = NextAuth({
           ]
         );
       }
+
+      // Retry gbrain provisioning if it failed during createUser (e.g. missing binary).
+      if (user.id) {
+        const { rows } = await getMetaDb().query(
+          `SELECT 1 FROM pg_database WHERE datname = $1`,
+          [`gbrain_user_${user.id}`]
+        );
+        if (rows.length === 0) {
+          try {
+            await provisionGbrainDb(user.id);
+          } catch (err) {
+            console.error(`[auth] gbrain provisioning retry failed for user ${user.id}:`, err);
+          }
+        }
+      }
+
       return true;
     },
     session({ session, user }) {
