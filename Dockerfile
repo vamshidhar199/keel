@@ -14,7 +14,7 @@ FROM oven/bun:1.1 AS runner
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git ca-certificates \
+    ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 # Install gbrain CLI

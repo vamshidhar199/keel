@@ -53,12 +53,25 @@ const nextAuth = NextAuth({
       }
 
       // Retry gbrain provisioning if it failed during createUser (e.g. missing binary).
+      // Check the pages table, not just DB existence — DB can exist without schema.
       if (user.id) {
-        const { rows } = await getMetaDb().query(
-          `SELECT 1 FROM pg_database WHERE datname = $1`,
-          [`gbrain_user_${user.id}`]
-        );
-        if (rows.length === 0) {
+        const { Pool: PgPool } = await import("pg");
+        const base = process.env.DATABASE_URL!;
+        const url = new URL(base);
+        url.pathname = `/gbrain_user_${user.id}`;
+        const pool = new PgPool({ connectionString: url.toString() });
+        let needsProvision = false;
+        try {
+          const { rows } = await pool.query(
+            `SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'pages'`
+          );
+          needsProvision = rows.length === 0;
+        } catch {
+          needsProvision = true; // DB doesn't exist yet
+        } finally {
+          await pool.end();
+        }
+        if (needsProvision) {
           try {
             await provisionGbrainDb(user.id);
           } catch (err) {
