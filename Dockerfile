@@ -17,15 +17,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-# Install gbrain CLI and verify it's at the expected location
+# Install gbrain CLI — bun -g install doesn't reliably create the bin symlink,
+# so we find cli.ts directly and link it ourselves.
 RUN BUN_INSTALL=/root/.bun bun install -g gbrain \
-  && (test -x /root/.bun/bin/gbrain || \
-      (FOUND=$(find / -name gbrain -type l 2>/dev/null -not -path "*/node_modules/*" | head -1) \
-       && echo "gbrain found at $FOUND, linking..." \
-       && mkdir -p /root/.bun/bin \
-       && ln -sf "$FOUND" /root/.bun/bin/gbrain)) \
-  && test -x /root/.bun/bin/gbrain \
-  && echo "gbrain ready at /root/.bun/bin/gbrain"
+  && CLI=$(find / -path "*/gbrain/src/cli.ts" 2>/dev/null | head -1) \
+  && [ -n "$CLI" ] || (echo "ERROR: gbrain cli.ts not found" && find / -iname "*gbrain*" 2>/dev/null && exit 1) \
+  && chmod +x "$CLI" \
+  && mkdir -p /root/.bun/bin \
+  && ln -sf "$CLI" /root/.bun/bin/gbrain \
+  && test -L /root/.bun/bin/gbrain \
+  && echo "gbrain ready: /root/.bun/bin/gbrain -> $CLI"
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
