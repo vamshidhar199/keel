@@ -15,8 +15,18 @@ function gbrainDbUrl(userId: string): string {
 }
 
 // Invokes the gbrain CLI with the correct DB for the given user.
+// gbrain is a subprocess and can't read our DB, so we resolve the user's
+// OpenAI key here (env wins, DB fallback — matches anthropic.ts/embeddings.ts)
+// and inject it into the subprocess env.
 async function gbrain(userId: string, args: string[]): Promise<string> {
   const bunBin = process.env.BUN_BIN ?? "/Users/monishavamshi/.bun/bin";
+
+  const { rows } = await getMetaDb().query(
+    "SELECT openai_api_key FROM user_api_keys WHERE user_id = $1",
+    [userId]
+  );
+  const openaiKey = process.env.OPENAI_API_KEY || rows[0]?.openai_api_key;
+
   const { stdout } = await execFileAsync(
     `${bunBin}/gbrain`,
     args,
@@ -25,6 +35,7 @@ async function gbrain(userId: string, args: string[]): Promise<string> {
         ...process.env,
         PATH: `${bunBin}:${process.env.PATH}`,
         GBRAIN_DATABASE_URL: gbrainDbUrl(userId),
+        ...(openaiKey ? { OPENAI_API_KEY: openaiKey } : {}),
       },
       timeout: 60_000,
     }

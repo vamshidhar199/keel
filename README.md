@@ -70,6 +70,8 @@ You should see `mettrie-postgres` in the list.
 
 gbrain is a local CLI that stores knowledge pages into Postgres and runs embeddings.
 
+> **Important:** gbrain here is the **`garrytan/gbrain` GitHub repo**, NOT the `gbrain` package on npm. The npm package with that name is a completely unrelated ML library — `bun install -g gbrain` will install the wrong thing. Always clone from GitHub.
+
 ```bash
 # Clone gbrain (use the garrytan/gbrain repo)
 git clone https://github.com/garrytan/gbrain.git ~/gbrain
@@ -217,6 +219,33 @@ Sign in with Google. On first sign-in the app automatically:
 4. They run `bash setup.sh` from the repo root and fill in their own `AUTH_SECRET` and `BUN_BIN`.
 
 > Once deployed to Railway (HTTPS), Slack public distribution is enabled and any user can connect any workspace without needing to be added manually.
+
+---
+
+## Production deployment (Railway)
+
+### Required env vars
+- `DATABASE_URL` — Railway Postgres plugin injects automatically
+- `SUPER_DATABASE_URL` — same host/user as `DATABASE_URL` but pointing to the `postgres` database (used by `provisionGbrainDb` to enable pgvector and grant BYPASSRLS)
+- `AUTH_SECRET` — `openssl rand -base64 32`
+- `AUTH_TRUST_HOST=true` — required by Auth.js v5 behind a proxy; without it sign-in returns "UntrustedHost" 500
+- `NEXTAUTH_URL=https://<railway-url>` — drives both Gmail and Slack callback URLs
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`
+- `BUN_BIN=/root/.bun/bin` (matches the Dockerfile)
+- `OPENAI_API_KEY` — **must be in env vars**, not just the in-app settings UI. The gbrain CLI subprocess reads this from `process.env` for chunk embeddings; it cannot read your DB.
+- `ANTHROPIC_API_KEY` — UI/DB is fine (Next.js code falls back to DB), but env var is also OK.
+
+### Slack public distribution
+After Railway deploy:
+1. Add `https://<railway-url>/api/slack/callback` to Slack App **Redirect URLs**
+2. **Features → Event Subscriptions** → enable, set Request URL to `https://<railway-url>/api/slack/events`, subscribe to `tokens_revoked` + `app_uninstalled`
+3. **Settings → Manage Distribution** → complete checklist → Activate Public Distribution
+
+### gbrain in Docker
+The Dockerfile clones `garrytan/gbrain` from GitHub at a **pinned commit SHA** (controlled by the `GBRAIN_SHA` ARG). It does NOT use `bun install -g gbrain` — the npm package with that name is a different library. The bin symlink at `/root/.bun/bin/gbrain` is created manually by `ln -sf` because `bun link` is unreliable in Docker.
+
+To bump the pinned version, get the latest SHA from your local clone and update `GBRAIN_SHA` in `app/Dockerfile`.
 
 ---
 

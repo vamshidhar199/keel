@@ -8,8 +8,10 @@ export async function register() {
 
     const { schedulerTick } = await import("./lib/sync");
 
-    // Run immediately on startup, then every 30 minutes.
+    // Run once on startup to catch up if cron missed anything during downtime.
+    // The recurring schedule is now driven by Railway Cron hitting
+    // POST /api/cron/scheduler-tick (in-process setInterval was unreliable
+    // because Railway suspends idle containers).
     void schedulerTick();
-    setInterval(() => void schedulerTick(), 30 * 60 * 1000);
   }
 }
