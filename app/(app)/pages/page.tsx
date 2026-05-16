@@ -14,13 +14,24 @@ const ENTITY_ICON: Record<string, { icon: string; colorVar: string; fromVar: str
 export default async function PagesIndex({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string }>;
+  searchParams: Promise<{ type?: string; kind?: string }>;
 }) {
   const session = await auth();
   const userId = session!.user!.id;
 
-  const { type } = await searchParams;
-  const pages = await listPages(userId, type ? { type } : {});
+  const { type, kind } = await searchParams;
+  const pages = await listPages(userId, {
+    type: type || undefined,
+    kind: kind || undefined,
+  });
+
+  function buildQuery(next: { type?: string; kind?: string }): string {
+    const params = new URLSearchParams();
+    if (next.type) params.set("type", next.type);
+    if (next.kind) params.set("kind", next.kind);
+    const qs = params.toString();
+    return qs ? `?${qs}` : "";
+  }
 
   return (
     <div className="min-h-screen">
@@ -44,56 +55,66 @@ export default async function PagesIndex({
         </Link>
       </header>
 
-      <div className="px-6 py-8 space-y-6">
-        {/* Filter tabs */}
-        <div className="flex items-center justify-between">
-          <div
-            className="flex items-center gap-1 p-1 rounded-xl"
-            style={{ background: "var(--c-filter-bg)", border: "1px solid var(--c-filter-border)" }}
+      <div className="px-6 py-8 space-y-4">
+        {/* Type filter row */}
+        <div
+          className="flex items-center gap-1 p-1 rounded-xl w-fit"
+          style={{ background: "var(--c-filter-bg)", border: "1px solid var(--c-filter-border)" }}
+        >
+          <Link
+            href={buildQuery({ kind })}
+            className="px-4 py-2 rounded-lg text-[11px] font-semibold transition-all"
+            style={
+              !type
+                ? { background: "var(--c-filter-act)", color: "var(--c-primary-on)" }
+                : { color: "var(--c-muted)" }
+            }
           >
+            All types
+          </Link>
+          {TYPES.map((t) => (
             <Link
-              href="/pages"
-              className="px-4 py-2 rounded-lg text-[11px] font-semibold transition-all"
+              key={t}
+              href={buildQuery({ type: t, kind })}
+              className="px-4 py-2 rounded-lg text-[11px] font-semibold transition-all capitalize"
               style={
-                !type
+                type === t
                   ? { background: "var(--c-filter-act)", color: "var(--c-primary-on)" }
                   : { color: "var(--c-muted)" }
               }
             >
-              All
+              {t}
             </Link>
-            {TYPES.map((t) => (
-              <Link
-                key={t}
-                href={`/pages?type=${t}`}
-                className="px-4 py-2 rounded-lg text-[11px] font-semibold transition-all"
-                style={
-                  type === t
-                    ? { background: "var(--c-filter-act)", color: "var(--c-primary-on)" }
-                    : { color: "var(--c-muted)" }
-                }
-              >
-                {t}
-              </Link>
-            ))}
-          </div>
+          ))}
+        </div>
 
-          <div className="flex gap-3">
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-semibold transition-all"
-              style={{ color: "var(--c-muted)", border: "1px solid var(--c-card-border)", background: "var(--c-btn-bg)" }}
-            >
-              <span className="material-symbols-outlined text-[16px] leading-none">filter_list</span>
-              Filter
-            </button>
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-semibold transition-all"
-              style={{ color: "var(--c-muted)", border: "1px solid var(--c-card-border)", background: "var(--c-btn-bg)" }}
-            >
-              <span className="material-symbols-outlined text-[16px] leading-none">sort</span>
-              Sort
-            </button>
-          </div>
+        {/* Kind filter row */}
+        <div
+          className="flex items-center gap-1 p-1 rounded-xl w-fit"
+          style={{ background: "var(--c-filter-bg)", border: "1px solid var(--c-filter-border)" }}
+        >
+          <Link
+            href={buildQuery({ type })}
+            className="px-4 py-2 rounded-lg text-[11px] font-semibold transition-all"
+            style={
+              !kind
+                ? { background: "var(--c-filter-act)", color: "var(--c-primary-on)" }
+                : { color: "var(--c-muted)" }
+            }
+          >
+            All
+          </Link>
+          <Link
+            href={buildQuery({ type, kind: "job_listing" })}
+            className="px-4 py-2 rounded-lg text-[11px] font-semibold transition-all"
+            style={
+              kind === "job_listing"
+                ? { background: "var(--c-filter-act)", color: "var(--c-primary-on)" }
+                : { color: "var(--c-muted)" }
+            }
+          >
+            Job listings
+          </Link>
         </div>
 
         {/* Table */}
@@ -115,7 +136,8 @@ export default async function PagesIndex({
                   <th className="px-6 py-3 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--c-subtle)" }}>Title</th>
                   <th className="px-6 py-3 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--c-subtle)" }}>Path</th>
                   <th className="px-6 py-3 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--c-subtle)" }}>Links</th>
-                  <th className="px-6 py-3 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--c-subtle)" }}>Entity Type</th>
+                  <th className="px-6 py-3 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--c-subtle)" }}>Type</th>
+                  <th className="px-6 py-3 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--c-subtle)" }}>Tag</th>
                   <th className="px-6 py-3 text-[10px] font-semibold uppercase tracking-widest text-right" style={{ color: "var(--c-subtle)" }}>Actions</th>
                 </tr>
               </thead>
@@ -170,9 +192,24 @@ export default async function PagesIndex({
                               border: badgeType ? `1px solid var(--c-badge-${badgeType}-b)` : "1px solid var(--c-card-border)",
                             }}
                           >
-                            {p.type}
+                            {p.type ?? "—"}
                           </span>
                         </Link>
+                      </td>
+                      <td className="px-6 py-4">
+                        {p.kind === "job_listing" ? (
+                          <span
+                            className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full"
+                            style={{
+                              background: "var(--c-stat1-icon)",
+                              color: "var(--c-stat1)",
+                            }}
+                          >
+                            opportunity
+                          </span>
+                        ) : (
+                          <span className="text-[11px]" style={{ color: "var(--c-subtle)" }}>—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <Link href={`/pages/${p.slug}`} className="p-1 transition-colors inline-block" style={{ color: "var(--c-subtle)" }}>

@@ -1,7 +1,8 @@
-import { getMetaDb } from "./db";
+import { getMetaDb, withUser } from "./db";
 import { extractEmail } from "./extract";
 import { findExistingPage, composePage, getKnownEntities } from "./compose";
 import { putPage } from "./gbrain";
+import { decrypt } from "./crypto";
 
 interface RawEventRow {
   id: string;
@@ -31,6 +32,9 @@ export async function processRawEvent(
   );
   if (!rows[0]) throw new Error(`raw_event ${eventId} not found`);
   const event = rows[0];
+  const subject = decrypt(event.subject) ?? "";
+  const fromAddr = decrypt(event.from_addr) ?? "";
+  const bodyText = decrypt(event.body_text) ?? "";
 
   // Mark as in-progress to prevent double-processing.
   await db.query(
@@ -47,10 +51,10 @@ export async function processRawEvent(
       userId,
       {
         id: event.id,
-        subject: event.subject ?? "",
-        from_addr: event.from_addr ?? "",
+        subject,
+        from_addr: fromAddr,
         date_sent: event.date_sent?.toISOString() ?? null,
-        body_text: event.body_text ?? "",
+        body_text: bodyText,
       },
       knownEntities
     );
@@ -75,16 +79,35 @@ export async function processRawEvent(
         { ...entity, resolvedSlug },
         {
           eventId: event.id,
-          subject: event.subject ?? "",
-          fromAddr: event.from_addr ?? "",
+          subject,
+          fromAddr,
           dateSent: event.date_sent?.toISOString() ?? null,
         },
         existing?.content ?? null,
         knownEntities
       );
 
-      await putPage(userId, slug, content);
+      const kind =
+        typeof entity.attributes?.kind === "string"
+          ? (entity.attributes.kind as string)
+          : undefined;
+      await putPage(userId, slug, content, { kind, rawEventId: event.id });
       pagesWritten.push(slug);
+    }
+
+    // Step 5 — surface extracted commitments. Reuse the Haiku result already in
+    // memory; no extra LLM call. Attribute to the first entity as a best guess.
+    if (extraction.commitments.length > 0) {
+      const attributedSlug = extraction.entities[0]?.slug ?? null;
+      await withUser(userId, async (c) => {
+        for (const text of extraction.commitments) {
+          await c.query(
+            `INSERT INTO commitments (user_id, raw_event_id, text, entity_slug)
+             VALUES ($1, $2, $3, $4)`,
+            [userId, eventId, text, attributedSlug]
+          );
+        }
+      });
     }
 
     await db.query(
@@ -94,7 +117,8 @@ export async function processRawEvent(
 
     return { eventId, status: "extracted", pagesWritten };
   } catch (err: any) {
-    console.error(`[pipeline] event=${eventId} FAILED:`, err);
+    // err.message only — full err can echo prompt content from LLM SDKs
+    console.error(`[pipeline] event=${eventId} FAILED:`, String(err?.message ?? err).slice(0, 200));
     await db.query(
       `UPDATE raw_events SET extraction_status = 'failed', extracted_at = now() WHERE id = $1`,
       [eventId]
@@ -122,19 +146,10 @@ export async function getExtractionStatus(userId: string): Promise<ExtractionSta
        GROUP BY extraction_status`,
       [userId]
     ),
-    // Count pages in the user's gbrain DB.
-    (async () => {
-      const { getGbrainDb } = await import("./db");
-      const gdb = getGbrainDb(userId);
-      try {
-        const r = await gdb.query<{ cnt: string }>("SELECT COUNT(*) AS cnt FROM pages");
-        return r.rows[0]?.cnt ?? "0";
-      } catch {
-        return "0";
-      } finally {
-        await gdb.end();
-      }
-    })(),
+    withUser(userId, async (c) => {
+      const r = await c.query<{ cnt: string }>("SELECT COUNT(*) AS cnt FROM pages");
+      return r.rows[0]?.cnt ?? "0";
+    }).catch(() => "0"),
   ]);
 
   const counts: Record<string, number> = {};

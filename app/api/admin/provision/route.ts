@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { provisionGbrainDb } from "@/lib/gbrain";
 
+// Per-user DB provisioning was removed in the shared-DB + RLS migration.
+// Users are ready to write pages as soon as they sign in.
 export async function POST() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "not authenticated" }, { status: 401 });
-  }
-  try {
-    await provisionGbrainDb(session.user.id);
-    return NextResponse.json({ ok: true, userId: session.user.id });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
+  return NextResponse.json({ ok: true, message: "No provisioning needed — shared DB with RLS." });
 }

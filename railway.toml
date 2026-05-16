@@ -7,3 +7,7 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+
+[[deploy.cronJobs]]
+schedule = "* * * * *"
+command = "curl -X POST -fsS -H \"X-Queue-Secret: $QUEUE_SECRET\" $RAILWAY_PUBLIC_DOMAIN/api/queue/drain || true"

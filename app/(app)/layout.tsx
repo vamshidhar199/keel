@@ -14,7 +14,7 @@ export default async function AppShellLayout({
     <div className="min-h-screen" style={{ background: "var(--c-bg)", color: "var(--c-fg)" }}>
       <div className="mesh-gradient-bg" />
       <Sidebar email={session.user.email ?? ""} name={session.user.name} />
-      <main className="ml-64">{children}</main>
+      <main className="ml-16">{children}</main>
     </div>
   );
 }

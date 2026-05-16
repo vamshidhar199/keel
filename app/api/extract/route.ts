@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { enqueue } from "@/lib/queue";
+import { enqueue } from "@/lib/queue/enqueue";
 import { getExtractionStatus } from "@/lib/pipeline";
 
 export async function GET() {
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const limit = Math.min(Number(body.limit ?? 20), 500);
 
-  enqueue({ type: "extract_emails", userId: session.user.id, limit });
+  await enqueue({ type: "extract_emails", userId: session.user.id, limit });
 
   return NextResponse.json({ queued: true, limit });
 }

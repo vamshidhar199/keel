@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getMetaDb } from "./db";
+import { decrypt } from "./crypto";
 
 async function getClient(userId: string): Promise<Anthropic> {
   const db = getMetaDb();
@@ -7,7 +8,7 @@ async function getClient(userId: string): Promise<Anthropic> {
     "SELECT anthropic_api_key FROM user_api_keys WHERE user_id = $1",
     [userId]
   );
-  const key = process.env.ANTHROPIC_API_KEY || rows[0]?.anthropic_api_key;
+  const key = process.env.ANTHROPIC_API_KEY || decrypt(rows[0]?.anthropic_api_key);
   if (!key) throw new Error("No Anthropic API key configured for this user");
   return new Anthropic({ apiKey: key });
 }
@@ -110,6 +111,51 @@ export async function callClaudeWithWebSearch(
   const seen = new Set<string>();
 
   for (const block of response.content as any[]) {
+    if (block.type === "text") {
+      text += block.text;
+    } else if (block.type === "web_search_result_location") {
+      const url: string = block.url ?? "";
+      if (url && !seen.has(url)) {
+        seen.add(url);
+        webCitations.push({ title: block.title ?? url, url });
+      }
+    }
+  }
+
+  return { text: text.trim(), webCitations };
+}
+
+// Streaming variant of callClaudeWithWebSearch. Invokes onText for each text
+// delta as it arrives; returns the assembled final result the same way.
+export async function streamClaudeWithWebSearch(
+  userId: string,
+  model: typeof HAIKU | typeof SONNET,
+  messages: Anthropic.MessageParam[],
+  opts: { maxTokens?: number; system?: string; onText?: (delta: string) => void } = {}
+): Promise<{ text: string; webCitations: WebCitation[] }> {
+  await checkDailyCap(userId);
+
+  const anthropic = await getClient(userId);
+  const stream = anthropic.messages.stream({
+    model,
+    max_tokens: opts.maxTokens ?? 4096,
+    system: opts.system,
+    messages,
+    tools: [{ type: "web_search_20250305", name: "web_search" }] as any,
+  });
+
+  if (opts.onText) {
+    stream.on("text", opts.onText);
+  }
+
+  const final = await stream.finalMessage();
+  await logCost(userId, model, final.usage.input_tokens, final.usage.output_tokens);
+
+  let text = "";
+  const webCitations: WebCitation[] = [];
+  const seen = new Set<string>();
+
+  for (const block of final.content as any[]) {
     if (block.type === "text") {
       text += block.text;
     } else if (block.type === "web_search_result_location") {

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { getMetaDb } from "./db";
+import { decrypt } from "./crypto";
 
 async function getClient(userId: string): Promise<OpenAI> {
   const db = getMetaDb();
@@ -7,7 +8,7 @@ async function getClient(userId: string): Promise<OpenAI> {
     "SELECT openai_api_key FROM user_api_keys WHERE user_id = $1",
     [userId]
   );
-  const key = process.env.OPENAI_API_KEY || rows[0]?.openai_api_key;
+  const key = process.env.OPENAI_API_KEY || decrypt(rows[0]?.openai_api_key);
   if (!key) throw new Error("No OpenAI API key configured for this user");
   return new OpenAI({ apiKey: key });
 }

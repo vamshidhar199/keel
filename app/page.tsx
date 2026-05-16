@@ -3,7 +3,7 @@ import { auth, signIn } from "@/auth";
 
 export default async function Home() {
   const session = await auth();
-  if (session?.user?.id) redirect("/overview");
+  if (session?.user?.id) redirect("/ask");
 
   return (
     <div
@@ -28,7 +28,7 @@ export default async function Home() {
           <form
             action={async () => {
               "use server";
-              await signIn("google", { redirectTo: "/overview" });
+              await signIn("google", { redirectTo: "/ask" });
             }}
           >
             <button

@@ -46,6 +46,7 @@ Rules:
 - CRITICAL: If an entity matches one listed in "Known entities" below, use EXACTLY that slug — do not invent a new one
 - claims: specific facts stated about the entity in this email (not vague)
 - attributes: structured data e.g. { "role": "CTO", "needs_po": true, "company": "companies/acme" }
+- IMPORTANT: For inbound job opportunities (recruiter pitches, job listings, open-roles emails), classify the role/listing itself as type="project" AND set attributes.kind = "job_listing". Examples of entities that GET this tag: "Senior Software Engineer at Acme", "Forward Deployed Engineer", "Platform Developer - AI Builder". Entities that MUST NOT get kind="job_listing": the company posting the role (companies/acme), the recruiter (people/jane-doe), the hiring manager. The kind tag describes the listing only — never apply it to a related person or company entity, even if they appear in the same email. Genuine projects the user is working on do not get kind="job_listing".
 - commitments: action items or promises, e.g. "Send proposal by Friday"
 - confidence: 0–1 based on how clear and unambiguous the email content is
 - If worth_extracting is false, return empty entities/commitments arrays
