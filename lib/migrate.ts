@@ -394,6 +394,53 @@ CREATE POLICY page_sources_isolation ON page_sources
   WITH CHECK  (user_id = current_setting('app.user_id')::uuid);
 `;
 
+// File uploads as a source. Encrypted raw_bytes + parsed text routed through
+// the standard extraction pipeline via a linked raw_events row.
+const SCHEMA_FILES = `
+CREATE TABLE IF NOT EXISTS files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  filename TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  byte_size INTEGER NOT NULL,
+  raw_bytes BYTEA,
+  parse_status TEXT NOT NULL DEFAULT 'pending',
+  parse_error TEXT,
+  raw_event_id UUID REFERENCES raw_events(id) ON DELETE SET NULL,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_files_user_recent ON files (user_id, uploaded_at DESC);
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE files FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS files_isolation ON files;
+CREATE POLICY files_isolation ON files
+  USING       (user_id = current_setting('app.user_id')::uuid)
+  WITH CHECK  (user_id = current_setting('app.user_id')::uuid);
+`;
+
+// User-creatable Skills — named system-prompt addendums invokable in /ask.
+const SCHEMA_SKILLS = `
+CREATE TABLE IF NOT EXISTS skills (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  instructions TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT skills_user_slug_key UNIQUE (user_id, slug)
+);
+CREATE INDEX IF NOT EXISTS idx_skills_user_enabled ON skills (user_id) WHERE enabled = true;
+ALTER TABLE skills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE skills FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS skills_isolation ON skills;
+CREATE POLICY skills_isolation ON skills
+  USING       (user_id = current_setting('app.user_id')::uuid)
+  WITH CHECK  (user_id = current_setting('app.user_id')::uuid);
+`;
+
 export async function runMigrations(): Promise<void> {
   // Prefer ADMIN_DATABASE_URL (superuser) for CREATE EXTENSION and role grants.
   // Fall back to DATABASE_URL for local dev where ADMIN_DATABASE_URL is not yet set.
@@ -480,6 +527,22 @@ export async function runMigrations(): Promise<void> {
     console.log("[migrate] pages v2 schema ok");
   } catch (err) {
     console.error("[migrate] pages v2 schema failed:", (err as Error).message);
+  }
+
+  // Step 8e: file uploads as a source.
+  try {
+    await db.query(SCHEMA_FILES);
+    console.log("[migrate] files schema ok");
+  } catch (err) {
+    console.error("[migrate] files schema failed:", (err as Error).message);
+  }
+
+  // Step 8f: user-creatable Skills.
+  try {
+    await db.query(SCHEMA_SKILLS);
+    console.log("[migrate] skills schema ok");
+  } catch (err) {
+    console.error("[migrate] skills schema failed:", (err as Error).message);
   }
 
   // Step 9 (final): grant app role on all tables. Must run after every CREATE TABLE

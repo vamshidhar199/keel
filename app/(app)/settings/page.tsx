@@ -84,6 +84,21 @@ export default async function SettingsPage() {
           </Link>
         </section>
 
+        {/* Skills */}
+        <section>
+          <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>Skills</p>
+          <Link
+            href="/skills"
+            className="glass-card rounded-xl flex items-center justify-between px-5 py-4 transition-opacity hover:opacity-80"
+          >
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--c-fg)" }}>Custom chat behaviors</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-subtle)" }}>Saved instructions you can invoke from the Ask page</p>
+            </div>
+            <span className="material-symbols-outlined text-xl leading-none" style={{ color: "var(--c-muted)" }}>chevron_right</span>
+          </Link>
+        </section>
+
         {/* Appearance */}
         <section>
           <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>Appearance</p>

@@ -99,14 +99,19 @@ export async function synthesizeAnswerStream(
   hits: BrainSearchHit[],
   userName: string | null | undefined,
   history: { role: "user" | "assistant"; content: string }[] | undefined,
-  onDelta: (delta: string) => void
+  onDelta: (delta: string) => void,
+  skillInstructions?: string | null
 ): Promise<SynthesizedAnswer> {
   const today = new Date().toISOString().slice(0, 10);
   const ownerLine = userName
     ? `This knowledge base belongs to ${userName}. When the answer refers to ${userName}, use "you" / "your" instead of their name.`
     : "";
 
-  const system = [SYSTEM_PROMPT, ownerLine].filter(Boolean).join("\n\n");
+  const skillBlock = skillInstructions && skillInstructions.trim().length > 0
+    ? `<active_skill>\n${skillInstructions.trim()}\n</active_skill>`
+    : "";
+
+  const system = [SYSTEM_PROMPT, ownerLine, skillBlock].filter(Boolean).join("\n\n");
 
   const currentTurn = [
     `Today's date: ${today}`,

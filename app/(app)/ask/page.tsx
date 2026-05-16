@@ -3,6 +3,7 @@ import { listPages } from "@/lib/gbrain";
 import { withUser } from "@/lib/db";
 import { getOrGenerate } from "@/lib/briefing";
 import { callClaude, HAIKU } from "@/lib/anthropic";
+import { listSkills } from "@/lib/skills";
 import { AskClient } from "./ask-client";
 
 const TTL = 3600;
@@ -15,10 +16,20 @@ export default async function AskPage() {
   const session = await auth();
   const userId = session!.user!.id;
 
-  const recentPages = await listPages(userId, { limit: 5 });
+  const [recentPages, skills] = await Promise.all([
+    listPages(userId, { limit: 5 }),
+    listSkills(userId, true),
+  ]);
+
+  const pickerSkills = skills.map((s) => ({
+    id: s.id,
+    name: s.name,
+    slug: s.slug,
+    description: s.description,
+  }));
 
   if (recentPages.length < 5) {
-    return <AskClient opener={null} suggestions={null} />;
+    return <AskClient opener={null} suggestions={null} skills={pickerSkills} />;
   }
 
   const pageList = recentPages
@@ -102,5 +113,5 @@ export default async function AskPage() {
 
   const opener = typeof openerRaw === "string" ? openerRaw : null;
 
-  return <AskClient opener={opener} suggestions={suggestions} />;
+  return <AskClient opener={opener} suggestions={suggestions} skills={pickerSkills} />;
 }

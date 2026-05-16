@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RenderMarkdown } from "./render-markdown";
+import { SkillPicker, SlashAutocomplete, type PickerSkill } from "./skill-picker";
+
+const ACTIVE_SKILL_KEY = "mettrie:active-skill-id";
 
 interface Citation {
   chunk_id: string;
@@ -48,9 +51,10 @@ const SUGGESTED = [
 interface AskClientProps {
   opener: string | null;
   suggestions: Array<{ icon: string; label: string; statVar: string }> | null;
+  skills: PickerSkill[];
 }
 
-export function AskClient({ opener, suggestions }: AskClientProps) {
+export function AskClient({ opener, suggestions, skills }: AskClientProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -58,8 +62,27 @@ export function AskClient({ opener, suggestions }: AskClientProps) {
   const [mounted, setMounted] = useState(false);
   const [dateStr, setDateStr] = useState("");
   const [streaming, setStreaming] = useState<StreamingState | null>(null);
+  const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Persist active skill across reloads.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(ACTIVE_SKILL_KEY);
+    if (stored && skills.some((s) => s.id === stored)) {
+      setActiveSkillId(stored);
+    } else if (stored) {
+      window.localStorage.removeItem(ACTIVE_SKILL_KEY);
+    }
+  }, [skills]);
+
+  function updateActiveSkill(id: string | null) {
+    setActiveSkillId(id);
+    if (typeof window === "undefined") return;
+    if (id) window.localStorage.setItem(ACTIVE_SKILL_KEY, id);
+    else window.localStorage.removeItem(ACTIVE_SKILL_KEY);
+  }
 
   const activeSuggestions = suggestions ?? SUGGESTED;
   const openerText =
@@ -104,7 +127,11 @@ export function AskClient({ opener, suggestions }: AskClientProps) {
       const res = await fetch("/api/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, history: buildHistory() }),
+        body: JSON.stringify({
+          question: q,
+          history: buildHistory(),
+          skillId: activeSkillId,
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -312,6 +339,22 @@ export function AskClient({ opener, suggestions }: AskClientProps) {
 
       {/* Input bar */}
       <div className="shrink-0 w-full max-w-3xl mx-auto px-6 pb-6 relative z-10">
+        {/* Skill picker pill row */}
+        {skills.length > 0 && (
+          <div className="relative flex items-center gap-2 mb-2">
+            <SkillPicker
+              skills={skills}
+              activeSkillId={activeSkillId}
+              onChange={updateActiveSkill}
+            />
+            <SlashAutocomplete
+              skills={skills}
+              input={input}
+              setInput={setInput}
+              onPick={(s) => updateActiveSkill(s.id)}
+            />
+          </div>
+        )}
         <form
           onSubmit={send}
           className="glass-card rounded-2xl flex items-end gap-2 p-2.5 shadow-lg transition-all focus-within:[border-color:var(--c-card-hover-border)]"

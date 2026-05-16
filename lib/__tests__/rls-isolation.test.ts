@@ -228,6 +228,58 @@ describe("RLS cross-tenant isolation", () => {
     await getMetaDb().query(`DELETE FROM raw_events WHERE id = $1`, [eventRes.rows[0].id]);
   });
 
+  test("user A cannot see user B's skills", async () => {
+    await withUser(userB, (c) =>
+      c.query(
+        `INSERT INTO skills (user_id, name, slug, instructions)
+         VALUES ($1, 'B private skill', 'b-private-skill', 'private text')`,
+        [userB]
+      )
+    );
+    const { rows } = await withUser(userA, (c) =>
+      c.query(`SELECT name FROM skills WHERE slug = 'b-private-skill'`)
+    );
+    expect(rows).toEqual([]);
+  });
+
+  test("user A cannot insert a skill with user B's id", async () => {
+    await expect(
+      withUser(userA, (c) =>
+        c.query(
+          `INSERT INTO skills (user_id, name, slug, instructions)
+           VALUES ($1, 'evil', 'evil-a', 'evil')`,
+          [userB]
+        )
+      )
+    ).rejects.toThrow(/row.level security|row violates/i);
+  });
+
+  test("user A cannot see user B's files", async () => {
+    await withUser(userB, (c) =>
+      c.query(
+        `INSERT INTO files (user_id, filename, mime_type, byte_size, parse_status)
+         VALUES ($1, 'b-secret.pdf', 'application/pdf', 100, 'parsed')`,
+        [userB]
+      )
+    );
+    const { rows } = await withUser(userA, (c) =>
+      c.query(`SELECT filename FROM files WHERE filename = 'b-secret.pdf'`)
+    );
+    expect(rows).toEqual([]);
+  });
+
+  test("user A cannot insert a file with user B's id", async () => {
+    await expect(
+      withUser(userA, (c) =>
+        c.query(
+          `INSERT INTO files (user_id, filename, mime_type, byte_size, parse_status)
+           VALUES ($1, 'evil.pdf', 'application/pdf', 100, 'parsed')`,
+          [userB]
+        )
+      )
+    ).rejects.toThrow(/row.level security|row violates/i);
+  });
+
   test("user A cannot see user B's workflow_runs", async () => {
     // Seed a workflow row for B, then a run row for B's workflow.
     const { rows: wfRows } = await withUser(userB, (c) =>

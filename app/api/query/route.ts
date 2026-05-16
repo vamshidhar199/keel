@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { brainSearch, findEntityPages, getEntityChunks } from "@/lib/gbrain";
 import { synthesizeAnswerStream } from "@/lib/synthesize";
+import { getSkill, getSkillBySlug } from "@/lib/skills";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,6 +33,24 @@ export async function POST(req: NextRequest) {
   const history: { role: "user" | "assistant"; content: string }[] =
     Array.isArray(body.history) ? body.history : [];
 
+  // Optional skill: looked up by id first, falling back to slug for /command
+  // invocations. Disabled skills are silently ignored.
+  let skillInstructions: string | null = null;
+  let skillName: string | null = null;
+  if (typeof body.skillId === "string" && body.skillId.length > 0) {
+    const s = await getSkill(userId, body.skillId);
+    if (s && s.enabled) {
+      skillInstructions = s.instructions;
+      skillName = s.name;
+    }
+  } else if (typeof body.skillSlug === "string" && body.skillSlug.length > 0) {
+    const s = await getSkillBySlug(userId, body.skillSlug);
+    if (s && s.enabled) {
+      skillInstructions = s.instructions;
+      skillName = s.name;
+    }
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const enc = new TextEncoder();
@@ -40,6 +59,9 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        if (skillName) {
+          send({ skill: { name: skillName } });
+        }
         send({ phase: "searching" });
 
         const [vectorHits, entityPages] = await Promise.all([
@@ -74,7 +96,8 @@ export async function POST(req: NextRequest) {
           hits,
           userName,
           history,
-          (delta) => send({ delta })
+          (delta) => send({ delta }),
+          skillInstructions
         );
 
         send({

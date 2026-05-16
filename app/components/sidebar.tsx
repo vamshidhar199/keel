@@ -12,6 +12,7 @@ const NAV = [
   { href: "/ask", label: "Ask", icon: "chat_bubble" },
   { href: "/overview", label: "Home", icon: "home" },
   { href: "/workflows", label: "Workflows", icon: "bolt" },
+  { href: "/skills", label: "Skills", icon: "auto_fix_high" },
 ];
 
 export function Sidebar({ email, name }: Props) {

@@ -6,6 +6,7 @@ import { getExtractionStatus } from "@/lib/pipeline";
 import { GmailPanel } from "../../gmail-panel";
 import { SlackPanel } from "../../slack-panel";
 import { ExtractionPanel } from "../../extraction-panel";
+import { FilesPanel } from "../../files-panel";
 
 export default async function SourcesPage() {
   const session = await auth();
@@ -62,6 +63,7 @@ export default async function SourcesPage() {
               messageCount={slackStatus.messageCount}
               syncIntervalHours={slackStatus.syncIntervalHours}
             />
+            <FilesPanel />
           </div>
         </div>
       </div>
