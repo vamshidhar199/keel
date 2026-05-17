@@ -97,41 +97,57 @@ export async function PATCH(req: NextRequest) {
   const bentoLayoutJson = bentoLayout !== null ? JSON.stringify(bentoLayout) : null;
 
   const db = getMetaDb();
-  await db.query(
-    `INSERT INTO user_preferences
-       (user_id, digest_enabled, digest_hour_local,
-        show_commitments, show_awaiting_reply,
-        show_active_threads, show_quiet_but_important,
-        show_opportunities, show_workflow_runs, ai_memories,
-        bento_layout, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, ''),
-             COALESCE($11::jsonb, '[]'::jsonb), now())
-     ON CONFLICT (user_id) DO UPDATE SET
-       digest_enabled            = COALESCE($2, user_preferences.digest_enabled),
-       digest_hour_local         = COALESCE($3, user_preferences.digest_hour_local),
-       show_commitments          = COALESCE($4, user_preferences.show_commitments),
-       show_awaiting_reply       = COALESCE($5, user_preferences.show_awaiting_reply),
-       show_active_threads       = COALESCE($6, user_preferences.show_active_threads),
-       show_quiet_but_important  = COALESCE($7, user_preferences.show_quiet_but_important),
-       show_opportunities        = COALESCE($8, user_preferences.show_opportunities),
-       show_workflow_runs        = COALESCE($9, user_preferences.show_workflow_runs),
-       ai_memories               = COALESCE($10, user_preferences.ai_memories),
-       bento_layout              = COALESCE($11::jsonb, user_preferences.bento_layout),
-       updated_at                = now()`,
-    [
-      session.user.id,
-      typeof body.digest_enabled === "boolean" ? body.digest_enabled : null,
-      Number.isInteger(hour) ? hour : null,
-      typeof body.show_commitments === "boolean" ? body.show_commitments : null,
-      typeof body.show_awaiting_reply === "boolean" ? body.show_awaiting_reply : null,
-      typeof body.show_active_threads === "boolean" ? body.show_active_threads : null,
-      typeof body.show_quiet_but_important === "boolean" ? body.show_quiet_but_important : null,
-      typeof body.show_opportunities === "boolean" ? body.show_opportunities : null,
-      typeof body.show_workflow_runs === "boolean" ? body.show_workflow_runs : null,
-      aiMemories,
-      bentoLayoutJson,
-    ]
-  );
+  try {
+    await db.query(
+      `INSERT INTO user_preferences
+         (user_id, digest_enabled, digest_hour_local,
+          show_commitments, show_awaiting_reply,
+          show_active_threads, show_quiet_but_important,
+          show_opportunities, show_workflow_runs, ai_memories,
+          bento_layout, updated_at)
+       VALUES ($1,
+               COALESCE($2, true),
+               COALESCE($3, 8),
+               COALESCE($4, true),
+               COALESCE($5, true),
+               COALESCE($6, true),
+               COALESCE($7, true),
+               COALESCE($8, true),
+               COALESCE($9, true),
+               COALESCE($10, ''),
+               COALESCE($11::jsonb, '[]'::jsonb),
+               now())
+       ON CONFLICT (user_id) DO UPDATE SET
+         digest_enabled            = COALESCE($2, user_preferences.digest_enabled),
+         digest_hour_local         = COALESCE($3, user_preferences.digest_hour_local),
+         show_commitments          = COALESCE($4, user_preferences.show_commitments),
+         show_awaiting_reply       = COALESCE($5, user_preferences.show_awaiting_reply),
+         show_active_threads       = COALESCE($6, user_preferences.show_active_threads),
+         show_quiet_but_important  = COALESCE($7, user_preferences.show_quiet_but_important),
+         show_opportunities        = COALESCE($8, user_preferences.show_opportunities),
+         show_workflow_runs        = COALESCE($9, user_preferences.show_workflow_runs),
+         ai_memories               = COALESCE($10, user_preferences.ai_memories),
+         bento_layout              = COALESCE($11::jsonb, user_preferences.bento_layout),
+         updated_at                = now()`,
+      [
+        session.user.id,
+        typeof body.digest_enabled === "boolean" ? body.digest_enabled : null,
+        Number.isInteger(hour) ? hour : null,
+        typeof body.show_commitments === "boolean" ? body.show_commitments : null,
+        typeof body.show_awaiting_reply === "boolean" ? body.show_awaiting_reply : null,
+        typeof body.show_active_threads === "boolean" ? body.show_active_threads : null,
+        typeof body.show_quiet_but_important === "boolean" ? body.show_quiet_but_important : null,
+        typeof body.show_opportunities === "boolean" ? body.show_opportunities : null,
+        typeof body.show_workflow_runs === "boolean" ? body.show_workflow_runs : null,
+        aiMemories,
+        bentoLayoutJson,
+      ]
+    );
+  } catch (err) {
+    const msg = String((err as Error)?.message ?? err).slice(0, 400);
+    console.error("[preferences] PATCH failed:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }
