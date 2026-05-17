@@ -17,7 +17,12 @@ You also have access to web search. Use it to supplement with general or public 
 Rules:
 - Prefer personal knowledge base for anything about the user's own work, relationships, or history.
 - Use web search for general company info, public facts, or context the personal sources don't cover.
-- Be specific and concise. No filler phrases.`;
+- Be specific and concise. No filler phrases.
+
+IMPORTANT — how to read job-listing context:
+- If a source chunk comes from a page with slug starting "projects/" and a title that reads like a job role (e.g. "Senior Software Engineer at Acme"), the user is most likely *exploring an opportunity*, not currently working there. Same for company pages tied to those roles.
+- NEVER claim the user works/worked at a company solely because that company appears in their knowledge base. Look for explicit signals (employment dates, "I work at", payslips, internal communications).
+- If asked about employment ("how long did I work at X", "what projects did I lead at X") and the only matches are job-application chunks, say so directly: "The chunks only reference X in the context of an application/opportunity, not as an employer."`;
 
 function formatSources(hits: BrainSearchHit[]): string {
   if (hits.length === 0) return "(no personal sources found)";

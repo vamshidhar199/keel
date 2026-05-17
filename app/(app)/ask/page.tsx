@@ -16,8 +16,12 @@ export default async function AskPage() {
   const session = await auth();
   const userId = session!.user!.id;
 
+  // Exclude job_listing pages from /ask grounding — those are inbound
+  // opportunities the user is exploring, not work they've done. Letting them
+  // through generates wrong questions like "How long did I work at OpenAI?"
+  // for users who only ever *applied* there.
   const [recentPages, skills] = await Promise.all([
-    listPages(userId, { limit: 5 }),
+    listPages(userId, { limit: 5, excludeKind: "job_listing" }),
     listSkills(userId, true),
   ]);
 
@@ -42,6 +46,7 @@ export default async function AskPage() {
         const { rows } = await client.query<{ title: string; type: string | null }>(
           `SELECT title, type FROM pages
            WHERE user_id = $1 AND updated_at > NOW() - INTERVAL '24 hours'
+             AND (kind IS NULL OR kind <> 'job_listing')
            ORDER BY updated_at DESC LIMIT 20`,
           [userId]
         );

@@ -185,10 +185,12 @@ export interface PageSummary {
   link_count: number;
 }
 
-// List all pages for the user, optionally filtered by type and/or kind.
+// List all pages for the user, optionally filtered by type and/or kind, with
+// an optional exclude-kind for surfaces that don't want job listings polluting
+// their view (e.g. the /ask opener and suggestion contexts).
 export async function listPages(
   userId: string,
-  opts: { type?: string; kind?: string; limit?: number } = {}
+  opts: { type?: string; kind?: string; excludeKind?: string; limit?: number } = {}
 ): Promise<PageSummary[]> {
   return withUser(userId, async (c) => {
     const params: unknown[] = [];
@@ -200,6 +202,10 @@ export async function listPages(
     if (opts.kind) {
       params.push(opts.kind);
       wheres.push(`p.kind = $${params.length}`);
+    }
+    if (opts.excludeKind) {
+      params.push(opts.excludeKind);
+      wheres.push(`(p.kind IS NULL OR p.kind <> $${params.length})`);
     }
     const where = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
     params.push(opts.limit ?? 500);
