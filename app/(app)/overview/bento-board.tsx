@@ -4,15 +4,10 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 export type CardSize = "normal" | "wide";
 
-// Each card the server renders into the board carries a stable `key` for
-// layout persistence and a hint about whether it can be hidden (which maps
-// to one of the existing show_* user_preferences flags).
 export interface BentoCardDef {
   key: string;
   defaultSize?: CardSize;
   node: ReactNode;
-  // The user_preferences flag name that controls this card's visibility.
-  // Omit for cards that are never user-toggleable (e.g. recipe cards).
   hideFlag?: keyof ShowFlags;
 }
 
@@ -36,7 +31,10 @@ interface Props {
   initialShowFlags: ShowFlags;
 }
 
-const SAVE_DEBOUNCE_MS = 400;
+const SAVE_DEBOUNCE_MS = 150;
+const DRAG_DATA_KEY = "application/x-bento-key";
+
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function BentoBoard({ cards, initialLayout, initialShowFlags }: Props) {
   const [editing, setEditing] = useState(false);
@@ -44,35 +42,60 @@ export function BentoBoard({ cards, initialLayout, initialShowFlags }: Props) {
     resolveLayout(initialLayout, cards)
   );
   const [showFlags, setShowFlags] = useState<ShowFlags>(initialShowFlags);
-  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const layoutRef = useRef(layout);
   const flagsRef = useRef(showFlags);
   layoutRef.current = layout;
   flagsRef.current = showFlags;
 
-  // Debounced save. Persists the current layout + show_flags to the API.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queueSave = useCallback(() => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      fetch("/api/settings/preferences", {
+
+  const flushSave = useCallback(async () => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    setSaveState("saving");
+    try {
+      const res = await fetch("/api/settings/preferences", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bento_layout: layoutRef.current,
           ...flagsRef.current,
         }),
-      }).catch(() => {});
-    }, SAVE_DEBOUNCE_MS);
+      });
+      if (!res.ok) {
+        console.error(`[bento] save failed: ${res.status}`);
+        setSaveState("error");
+        return;
+      }
+      setSaveState("saved");
+      setTimeout(() => setSaveState((s) => (s === "saved" ? "idle" : s)), 1500);
+    } catch (err) {
+      console.error(
+        "[bento] save error:",
+        String((err as Error)?.message ?? err).slice(0, 200)
+      );
+      setSaveState("error");
+    }
   }, []);
 
-  // Save on unmount too so closing the page mid-edit doesn't lose changes.
+  const queueSave = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(flushSave, SAVE_DEBOUNCE_MS);
+  }, [flushSave]);
+
+  // Best-effort save on page-hide. keepalive lets the request finish even if
+  // the page is unloading.
   useEffect(() => {
-    return () => {
+    function onPageHide() {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
-        // Fire one last sync (best-effort; the page is unmounting).
+        saveTimer.current = null;
+      }
+      try {
         fetch("/api/settings/preferences", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -82,8 +105,10 @@ export function BentoBoard({ cards, initialLayout, initialShowFlags }: Props) {
           }),
           keepalive: true,
         }).catch(() => {});
-      }
-    };
+      } catch {}
+    }
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
   }, []);
 
   function setSize(key: string, size: CardSize) {
@@ -112,7 +137,13 @@ export function BentoBoard({ cards, initialLayout, initialShowFlags }: Props) {
     queueSave();
   }
 
-  // Build the visible card list in the order specified by `layout`.
+  async function doneEditing() {
+    setEditing(false);
+    // Explicit flush so any change made within the debounce window lands
+    // before the user navigates away.
+    await flushSave();
+  }
+
   const cardByKey = new Map(cards.map((c) => [c.key, c]));
   const visible = layout
     .map((entry) => ({ entry, def: cardByKey.get(entry.key) }))
@@ -125,10 +156,14 @@ export function BentoBoard({ cards, initialLayout, initialShowFlags }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-3">
+        {editing && <SaveIndicator state={saveState} />}
         <button
           type="button"
-          onClick={() => setEditing((v) => !v)}
+          onClick={() => {
+            if (editing) void doneEditing();
+            else setEditing(true);
+          }}
           className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-md transition-colors cursor-pointer"
           style={{
             background: editing ? "var(--c-primary)" : "transparent",
@@ -150,13 +185,7 @@ export function BentoBoard({ cards, initialLayout, initialShowFlags }: Props) {
             entry={entry}
             def={def}
             editing={editing}
-            isDragging={draggingKey === entry.key}
-            onDragStart={(k) => setDraggingKey(k)}
-            onDragEnd={() => setDraggingKey(null)}
-            onDrop={(target) => {
-              if (draggingKey) reorder(draggingKey, target);
-              setDraggingKey(null);
-            }}
+            onDropFrom={(fromKey) => reorder(fromKey, entry.key)}
             onResize={(size) => setSize(entry.key, size)}
             onHide={() => setHidden(entry.key, true)}
           />
@@ -180,6 +209,21 @@ export function BentoBoard({ cards, initialLayout, initialShowFlags }: Props) {
   );
 }
 
+function SaveIndicator({ state }: { state: SaveState }) {
+  if (state === "idle") return null;
+  const map = {
+    saving: { label: "Saving…", color: "var(--c-subtle)" },
+    saved: { label: "Saved", color: "var(--c-stat3)" },
+    error: { label: "Save failed", color: "#ef4444" },
+  } as const;
+  const c = map[state];
+  return (
+    <span className="text-[11px]" style={{ color: c.color }}>
+      {c.label}
+    </span>
+  );
+}
+
 function hiddenCount(cards: BentoCardDef[], flags: ShowFlags): number {
   let n = 0;
   for (const c of cards) {
@@ -192,33 +236,23 @@ interface SlotProps {
   entry: LayoutEntry;
   def: BentoCardDef;
   editing: boolean;
-  isDragging: boolean;
-  onDragStart: (key: string) => void;
-  onDragEnd: () => void;
-  onDrop: (toKey: string) => void;
+  // Called when another card was dropped onto this one. The dragged card's
+  // key comes from dataTransfer — no React-state race.
+  onDropFrom: (fromKey: string) => void;
   onResize: (size: CardSize) => void;
   onHide: () => void;
 }
 
-function BentoSlot({
-  entry,
-  def,
-  editing,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  onDrop,
-  onResize,
-  onHide,
-}: SlotProps) {
+function BentoSlot({ entry, def, editing, onDropFrom, onResize, onHide }: SlotProps) {
   const [over, setOver] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const spanClass = entry.size === "wide" ? "lg:col-span-2" : "";
 
   return (
     <div
       className={`relative ${spanClass} ${editing ? "select-none" : ""}`}
       style={{
-        opacity: isDragging ? 0.4 : 1,
+        opacity: dragging ? 0.4 : 1,
         outline: editing
           ? `1.5px dashed ${over ? "var(--c-primary)" : "var(--c-card-border)"}`
           : undefined,
@@ -228,22 +262,32 @@ function BentoSlot({
       }}
       draggable={editing}
       onDragStart={(e) => {
+        if (!editing) return;
         e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData(DRAG_DATA_KEY, entry.key);
+        // Plain-text fallback for browsers that drop custom MIME types.
         e.dataTransfer.setData("text/plain", entry.key);
-        onDragStart(entry.key);
+        setDragging(true);
       }}
-      onDragEnd={onDragEnd}
+      onDragEnd={() => setDragging(false)}
       onDragOver={(e) => {
         if (!editing) return;
+        // Only highlight when this is a bento drag (not a random file drag).
+        const types = Array.from(e.dataTransfer.types);
+        if (!types.includes(DRAG_DATA_KEY) && !types.includes("text/plain")) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         if (!over) setOver(true);
       }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
+        if (!editing) return;
         e.preventDefault();
         setOver(false);
-        onDrop(entry.key);
+        const fromKey =
+          e.dataTransfer.getData(DRAG_DATA_KEY) ||
+          e.dataTransfer.getData("text/plain");
+        if (fromKey) onDropFrom(fromKey);
       }}
     >
       {editing && (
@@ -344,7 +388,7 @@ function prettyKey(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// Reconcile the saved layout with the cards the server actually passed.
+// Reconcile the saved layout with the cards the server actually rendered.
 // - Drops entries whose card no longer exists (e.g. a deleted recipe).
 // - Appends any new card not in the saved layout (default size 'normal').
 // - Preserves order from the saved layout where possible.

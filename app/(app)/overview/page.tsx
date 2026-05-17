@@ -15,6 +15,7 @@ import { TimezoneSync } from "./timezone-sync";
 import { LastSeenSync } from "./last-seen-sync";
 import { DoneForToday } from "./done-for-today";
 import { DrawerMount } from "./drawer-mount";
+import { WorkflowRunDrawerMount } from "./workflow-run-drawer-mount";
 import { BentoBoard, type BentoCardDef, type LayoutEntry } from "./bento-board";
 
 interface Prefs {
@@ -114,6 +115,7 @@ export default async function OverviewPage() {
       <TimezoneSync currentTz={timezone} />
       <LastSeenSync />
       <DrawerMount />
+      <WorkflowRunDrawerMount />
 
       {/* Sticky header */}
       <header className="header-glass sticky top-0 h-16 flex items-center px-6 z-30">

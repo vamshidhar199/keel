@@ -1,4 +1,6 @@
-import Link from "next/link";
+"use client";
+
+import { useRouter, useSearchParams } from "next/navigation";
 import { BentoCard, BentoEmpty } from "./bento-card";
 import { ThumbsRow } from "../thumbs-row";
 import type { RecentRunSummary } from "@/lib/workflows";
@@ -18,9 +20,21 @@ function relativeShort(iso: string): string {
   return days === 1 ? "1d ago" : `${days}d ago`;
 }
 
-// Recent successful workflow runs from the last 2 days. Clicking a row opens
-// the workflow detail page where the full output + run history lives.
+// Recent successful workflow runs. Clicking a row opens the WorkflowRunDrawer
+// via the ?run= URL param — the data renders in-place without navigating
+// away. Cmd/Ctrl-click falls back to the workflow detail page in a new tab.
 export function WorkflowRunsCard({ items, digestId }: Props) {
+  const router = useRouter();
+  const params = useSearchParams();
+
+  function openRun(runId: string, e: React.MouseEvent) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    const next = new URLSearchParams(params.toString());
+    next.set("run", runId);
+    router.replace(`/overview?${next.toString()}`, { scroll: false });
+  }
+
   return (
     <BentoCard
       icon="bolt"
@@ -34,9 +48,10 @@ export function WorkflowRunsCard({ items, digestId }: Props) {
         <ul className="space-y-2.5">
           {items.map((r) => (
             <li key={r.run_id} className="group">
-              <Link
+              <a
                 href={`/workflows/${r.workflow_id}`}
-                className="block rounded-lg p-2 -mx-2 transition-colors hover:[background:var(--c-row-hover)]"
+                onClick={(e) => openRun(r.run_id, e)}
+                className="block rounded-lg p-2 -mx-2 transition-colors hover:[background:var(--c-row-hover)] cursor-pointer"
               >
                 <div className="flex items-baseline gap-2">
                   <p
@@ -65,7 +80,7 @@ export function WorkflowRunsCard({ items, digestId }: Props) {
                     {r.preview}
                   </p>
                 )}
-              </Link>
+              </a>
             </li>
           ))}
         </ul>
