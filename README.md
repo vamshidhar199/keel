@@ -2,6 +2,8 @@
 
 A self-improving personal knowledge system that extracts structured knowledge from Gmail and Slack and lets you query it conversationally.
 
+> **Looking for product / architecture docs?** Start at **[`docs/INDEX.md`](./docs/INDEX.md)** — a guided table of contents covering design decisions, every feature, the billing/API-key system, deployment, and the roadmap.
+
 ---
 
 ## What you need
