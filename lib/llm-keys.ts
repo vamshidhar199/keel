@@ -8,15 +8,37 @@ export interface ResolvedKey {
   source: KeySource;
 }
 
-// Whether to fall back to the env-var shared key when a user hasn't configured
-// their own. Default: ON in dev (so local "just works"), OFF in production (so
-// a public deploy can't silently route all users onto your bill). Override
-// explicitly with SHARED_API_FALLBACK='true' or 'false' if you want the prod
-// behavior in dev or vice versa.
+// How the deployment treats the shared (env-var) API key.
+//
+//   'off'    — no shared fallback. Users MUST configure their own keys.
+//              The banner pushes them to Settings. Use for public deploys
+//              where every user is expected to BYO.
+//   'trial'  — shared fallback active, treated as a TRIAL. Banner nags the
+//              user with budget hints and a "Add your own key" CTA. Use
+//              during a controlled free-trial period (e.g. Product Hunt).
+//   'org'    — shared fallback active, treated as the INTENDED MODE. Banner
+//              stays hidden when both keys are empty. Use for a solo deploy
+//              (you're the only user) or a company-wide deploy with one
+//              shared corporate API key. /usage relabels accordingly.
+//
+// Default: 'trial' in dev (local "just works" with trial framing), 'off' in
+// production (safe by default for public deploys).
+//
+// Legacy SHARED_API_FALLBACK=true|false is honored as 'trial'|'off' if the
+// new SHARED_KEY_MODE is unset.
+export type SharedKeyMode = "off" | "trial" | "org";
+
+export function getSharedKeyMode(): SharedKeyMode {
+  const raw = (process.env.SHARED_KEY_MODE ?? "").toLowerCase().trim();
+  if (raw === "off" || raw === "trial" || raw === "org") return raw;
+  // Legacy alias.
+  if (process.env.SHARED_API_FALLBACK === "true") return "trial";
+  if (process.env.SHARED_API_FALLBACK === "false") return "off";
+  return process.env.NODE_ENV === "production" ? "off" : "trial";
+}
+
 function sharedFallbackEnabled(): boolean {
-  if (process.env.SHARED_API_FALLBACK === "true") return true;
-  if (process.env.SHARED_API_FALLBACK === "false") return false;
-  return process.env.NODE_ENV !== "production";
+  return getSharedKeyMode() !== "off";
 }
 
 // Global daily-spend ceiling for the SHARED fallback path only. Per-user caps
@@ -83,17 +105,19 @@ class SharedFallbackExhaustedError extends Error {
 // Public helper for UIs that want to display state without raising.
 export interface SharedStatus {
   enabled: boolean;
+  mode: SharedKeyMode;
   spentUsd: number;
   capUsd: number;
   exhausted: boolean;
 }
 
 export async function getSharedStatus(): Promise<SharedStatus> {
-  const enabled = sharedFallbackEnabled();
+  const mode = getSharedKeyMode();
+  const enabled = mode !== "off";
   const capUsd = sharedDailyCapUsd();
-  if (!enabled) return { enabled: false, spentUsd: 0, capUsd, exhausted: false };
+  if (!enabled) return { enabled: false, mode, spentUsd: 0, capUsd, exhausted: false };
   const spentUsd = await getSharedDailyTotal();
-  return { enabled, spentUsd, capUsd, exhausted: spentUsd >= capUsd };
+  return { enabled, mode, spentUsd, capUsd, exhausted: spentUsd >= capUsd };
 }
 
 async function getSharedKey(envVar: string | undefined): Promise<string | null> {

@@ -2,16 +2,14 @@ import Link from "next/link";
 import { userHasOwnKeys, getSharedStatus } from "@/lib/llm-keys";
 
 // Server-rendered banner that nags signed-in users when they haven't
-// configured their own API keys. Three states:
+// configured their own API keys. Behavior depends on SHARED_KEY_MODE:
 //
-// 1. Both keys missing AND shared fallback OFF/exhausted: red "you must
-//    configure keys" message. Nothing in the app that needs an LLM will
-//    work without this.
-// 2. Both keys missing AND shared fallback ON with budget: amber "free
-//    trial" notice with remaining-budget hint.
-// 3. Only one provider missing: amber "you're missing one — half of the
-//    app won't work".
-// 4. Both keys configured: render nothing.
+//   off   → red banner when keys are missing ("Connect your API keys")
+//   trial → amber trial banner with budget hint, OR red "trial exhausted"
+//   org   → no banner when both keys missing (shared key is intended);
+//           still nag if exactly one provider is missing (config bug)
+//
+// Returns null when there's nothing to say.
 export async function KeysSetupBanner({ userId }: { userId: string }) {
   const [has, shared] = await Promise.all([
     userHasOwnKeys(userId),
@@ -26,6 +24,12 @@ export async function KeysSetupBanner({ userId }: { userId: string }) {
 
   const bothMissing = !has.anthropic && !has.openai;
   const trialCovers = shared.enabled && !shared.exhausted;
+
+  // 'org' mode: shared key is the INTENDED mode, not a trial. Silence the
+  // banner entirely when both are missing (the org's shared key covers it).
+  // But still surface a single-provider mismatch since that's likely a
+  // misconfiguration the admin would want to fix.
+  if (shared.mode === "org" && bothMissing) return null;
 
   // Pick tone + copy.
   let tone: "red" | "amber";
@@ -49,10 +53,14 @@ export async function KeysSetupBanner({ userId }: { userId: string }) {
       ? "Today's shared budget is exhausted. Paste your own Anthropic + OpenAI keys in Settings to keep going."
       : "Paste your Anthropic + OpenAI keys in Settings → Developer. Nothing in the app will work without them.";
   } else {
+    // Exactly one provider missing. Shown in all modes — even org mode,
+    // because asymmetric configuration is usually a mistake.
     tone = "amber";
     title = `Missing your ${missingProviders.join(" + ")} key`;
     body = trialCovers
-      ? `You've got one key configured — the other is on the shared trial. Add your own key for full control.`
+      ? shared.mode === "org"
+        ? `One provider is missing — half the app will fall back to the shared key. Add your own ${missingProviders.join(" and ")} key for consistency.`
+        : `You've got one key configured — the other is on the shared trial. Add your own key for full control.`
       : `Half the app won't work until you configure your ${missingProviders.join(" and ")} key in Settings.`;
   }
 

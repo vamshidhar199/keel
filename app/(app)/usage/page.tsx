@@ -107,9 +107,9 @@ function shortNum(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-function sourceLabel(s: string): string {
+function sourceLabel(s: string, mode: "off" | "trial" | "org"): string {
   if (s === "user") return "Your key";
-  if (s === "shared") return "Free trial (shared)";
+  if (s === "shared") return mode === "org" ? "Shared key (org)" : "Free trial (shared)";
   return s;
 }
 
@@ -224,7 +224,7 @@ export default async function UsagePage() {
                           s.source === "user" ? "var(--c-stat3)" : "var(--c-stat1)",
                       }}
                     >
-                      {sourceLabel(s.source)}
+                      {sourceLabel(s.source, shared.mode)}
                     </span>
                     <span className="text-[12px]" style={{ color: "var(--c-muted)" }}>
                       {s.call_count} call{s.call_count === 1 ? "" : "s"}
@@ -323,7 +323,9 @@ export default async function UsagePage() {
               className="text-[10px] uppercase tracking-widest"
               style={{ color: "var(--c-subtle)" }}
             >
-              Shared trial budget (across all users)
+              {shared.mode === "org"
+                ? "Shared key daily ceiling (across all users)"
+                : "Shared trial budget (across all users)"}
             </p>
             <div className="flex items-center justify-between">
               <p className="text-[13px]" style={{ color: "var(--c-fg)" }}>
@@ -334,7 +336,9 @@ export default async function UsagePage() {
                 style={{ color: shared.exhausted ? "#ef4444" : "var(--c-subtle)" }}
               >
                 {shared.exhausted
-                  ? "Exhausted — add your own key"
+                  ? shared.mode === "org"
+                    ? "Daily ceiling hit — calls paused"
+                    : "Exhausted — add your own key"
                   : `${usd(shared.capUsd - shared.spentUsd)} left`}
               </p>
             </div>
