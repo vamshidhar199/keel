@@ -22,8 +22,22 @@ const nextAuth = NextAuth({
         params: {
           scope:
             "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+          // access_type: 'offline' = ask Google for a refresh_token alongside
+          // the access_token, so we can keep syncing Gmail after the user
+          // closes the tab.
           access_type: "offline",
-          prompt: "consent",
+          // We deliberately do NOT set prompt: 'consent' here. Forcing consent
+          // on every sign-in shows the full consent screen (plus, until
+          // verification clears, the "unverified app" warning) every login —
+          // brutal for retention. Without this param, Google only shows
+          // consent on the first authorization for a given (user × scope set);
+          // subsequent logins bounce straight through.
+          //
+          // Refresh-token implication: Google only issues a refresh_token on
+          // the FIRST consent. We persist it on the accounts row in the
+          // signIn callback below, so subsequent sign-ins reuse it. For
+          // production OAuth apps (your status), refresh_tokens don't expire
+          // unless explicitly revoked, so this is safe.
         },
       },
     }),
