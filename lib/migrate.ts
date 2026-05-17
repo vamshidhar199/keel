@@ -373,6 +373,9 @@ CREATE INDEX IF NOT EXISTS idx_pages_user_kind ON pages (user_id, kind) WHERE ki
 ALTER TABLE user_preferences
   ADD COLUMN IF NOT EXISTS show_opportunities BOOLEAN NOT NULL DEFAULT true;
 
+ALTER TABLE user_preferences
+  ADD COLUMN IF NOT EXISTS show_workflow_runs BOOLEAN NOT NULL DEFAULT true;
+
 ALTER TABLE raw_events
   ADD COLUMN IF NOT EXISTS is_from_user BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_raw_events_user_thread_from

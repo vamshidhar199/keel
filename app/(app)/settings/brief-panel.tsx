@@ -10,6 +10,7 @@ interface Prefs {
   show_active_threads: boolean;
   show_quiet_but_important: boolean;
   show_opportunities: boolean;
+  show_workflow_runs: boolean;
   ai_memories: string;
 }
 
@@ -21,6 +22,7 @@ const DEFAULTS: Prefs = {
   show_active_threads: true,
   show_quiet_but_important: true,
   show_opportunities: true,
+  show_workflow_runs: true,
   ai_memories: "",
 };
 
@@ -137,6 +139,13 @@ export function BriefPanel({ initialTimezone }: Props) {
         value={prefs.show_opportunities}
         disabled={saving || !prefs.digest_enabled}
         onChange={(v) => patch({ show_opportunities: v })}
+      />
+      <Toggle
+        label="Show recent workflow runs"
+        sublabel="Output from your scheduled workflows (last 48h)"
+        value={prefs.show_workflow_runs}
+        disabled={saving || !prefs.digest_enabled}
+        onChange={(v) => patch({ show_workflow_runs: v })}
       />
     </div>
   );

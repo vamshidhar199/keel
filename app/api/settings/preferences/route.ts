@@ -10,6 +10,7 @@ export interface UserPreferences {
   show_active_threads: boolean;
   show_quiet_but_important: boolean;
   show_opportunities: boolean;
+  show_workflow_runs: boolean;
   ai_memories: string;
 }
 
@@ -21,6 +22,7 @@ const DEFAULTS: UserPreferences = {
   show_active_threads: true,
   show_quiet_but_important: true,
   show_opportunities: true,
+  show_workflow_runs: true,
   ai_memories: "",
 };
 
@@ -37,7 +39,7 @@ export async function GET() {
     `SELECT digest_enabled, digest_hour_local,
             show_commitments, show_awaiting_reply,
             show_active_threads, show_quiet_but_important,
-            show_opportunities, ai_memories
+            show_opportunities, show_workflow_runs, ai_memories
      FROM user_preferences WHERE user_id = $1`,
     [session.user.id]
   );
@@ -72,8 +74,8 @@ export async function PATCH(req: NextRequest) {
        (user_id, digest_enabled, digest_hour_local,
         show_commitments, show_awaiting_reply,
         show_active_threads, show_quiet_but_important,
-        show_opportunities, ai_memories, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, ''), now())
+        show_opportunities, show_workflow_runs, ai_memories, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, ''), now())
      ON CONFLICT (user_id) DO UPDATE SET
        digest_enabled            = COALESCE($2, user_preferences.digest_enabled),
        digest_hour_local         = COALESCE($3, user_preferences.digest_hour_local),
@@ -82,7 +84,8 @@ export async function PATCH(req: NextRequest) {
        show_active_threads       = COALESCE($6, user_preferences.show_active_threads),
        show_quiet_but_important  = COALESCE($7, user_preferences.show_quiet_but_important),
        show_opportunities        = COALESCE($8, user_preferences.show_opportunities),
-       ai_memories               = COALESCE($9, user_preferences.ai_memories),
+       show_workflow_runs        = COALESCE($9, user_preferences.show_workflow_runs),
+       ai_memories               = COALESCE($10, user_preferences.ai_memories),
        updated_at                = now()`,
     [
       session.user.id,
@@ -93,6 +96,7 @@ export async function PATCH(req: NextRequest) {
       typeof body.show_active_threads === "boolean" ? body.show_active_threads : null,
       typeof body.show_quiet_but_important === "boolean" ? body.show_quiet_but_important : null,
       typeof body.show_opportunities === "boolean" ? body.show_opportunities : null,
+      typeof body.show_workflow_runs === "boolean" ? body.show_workflow_runs : null,
       aiMemories,
     ]
   );

@@ -323,6 +323,50 @@ interface WorkflowRunRow {
   source_refs: WorkflowSourceRef[];
 }
 
+export interface RecentRunSummary {
+  run_id: string;
+  workflow_id: string;
+  workflow_name: string;
+  ran_at: string;
+  preview: string;     // first ~160 chars of output_text
+}
+
+// Surface workflow runs on /overview. Filters to successful runs in the last
+// `windowDays` days. JOINs workflows so we can render the workflow name
+// without a second round-trip.
+export async function listRecentWorkflowRuns(
+  userId: string,
+  windowDays = 2,
+  limit = 3
+): Promise<RecentRunSummary[]> {
+  return withUser(userId, async (c) => {
+    const { rows } = await c.query<{
+      run_id: string;
+      workflow_id: string;
+      workflow_name: string;
+      ran_at: Date;
+      output_text: string | null;
+    }>(
+      `SELECT wr.id AS run_id, wr.workflow_id, w.name AS workflow_name,
+              wr.ran_at, wr.output_text
+         FROM workflow_runs wr
+         JOIN workflows w ON w.id = wr.workflow_id
+        WHERE wr.status = 'success'
+          AND wr.ran_at > now() - ($1 || ' days')::interval
+        ORDER BY wr.ran_at DESC
+        LIMIT $2`,
+      [windowDays, limit]
+    );
+    return rows.map((r) => ({
+      run_id: r.run_id,
+      workflow_id: r.workflow_id,
+      workflow_name: r.workflow_name,
+      ran_at: r.ran_at.toISOString(),
+      preview: (r.output_text ?? "").replace(/\s+/g, " ").trim().slice(0, 200),
+    }));
+  });
+}
+
 export async function listWorkflowRuns(
   userId: string,
   workflowId: string,

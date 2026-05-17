@@ -3,11 +3,13 @@ import { auth } from "@/auth";
 import { getMetaDb } from "@/lib/db";
 import { listOpenCommitments } from "@/lib/commitments";
 import { getOrGenerateDigest, localDateFor } from "@/lib/digest";
+import { listRecentWorkflowRuns } from "@/lib/workflows";
 import { CommitmentsCard } from "./cards/commitments-card";
 import { AwaitingReplyCard } from "./cards/awaiting-reply-card";
 import { ActiveThreadsCard } from "./cards/active-threads-card";
 import { QuietCard } from "./cards/quiet-card";
 import { OpportunitiesCard } from "./cards/opportunities-card";
+import { WorkflowRunsCard } from "./cards/workflow-runs-card";
 import { RecipeCard } from "./cards/recipe-card";
 import { TimezoneSync } from "./timezone-sync";
 import { LastSeenSync } from "./last-seen-sync";
@@ -21,6 +23,7 @@ interface Prefs {
   show_active_threads: boolean;
   show_quiet_but_important: boolean;
   show_opportunities: boolean;
+  show_workflow_runs: boolean;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -30,6 +33,7 @@ const DEFAULT_PREFS: Prefs = {
   show_active_threads: true,
   show_quiet_but_important: true,
   show_opportunities: true,
+  show_workflow_runs: true,
 };
 
 async function getUserContext(userId: string) {
@@ -41,7 +45,8 @@ async function getUserContext(userId: string) {
     ),
     db.query<Prefs>(
       `SELECT digest_enabled, show_commitments, show_awaiting_reply,
-              show_active_threads, show_quiet_but_important, show_opportunities
+              show_active_threads, show_quiet_but_important, show_opportunities,
+              show_workflow_runs
        FROM user_preferences WHERE user_id = $1`,
       [userId]
     ),
@@ -77,6 +82,11 @@ export default async function OverviewPage() {
   // Commitments are fetched fresh (not from the cached digest) because the user
   // marks them done/dismiss throughout the day.
   const liveCommitments = await listOpenCommitments(userId, 5);
+  // Workflow runs are also fetched fresh — they can fire at any time during
+  // the day after the digest was first composed.
+  const recentRuns = prefs.show_workflow_runs
+    ? await listRecentWorkflowRuns(userId, 2, 3).catch(() => [])
+    : [];
 
   const awaitingReply = digest?.awaiting_reply ?? [];
   const activeThreads = digest?.active_threads ?? [];
@@ -170,6 +180,9 @@ export default async function OverviewPage() {
           )}
           {prefs.show_opportunities && (
             <OpportunitiesCard items={opportunities} digestId={digestId} />
+          )}
+          {prefs.show_workflow_runs && (
+            <WorkflowRunsCard items={recentRuns} digestId={digestId} />
           )}
           {recipes.map((r) => (
             <RecipeCard key={r.recipe_id} card={r} digestId={digestId} />
