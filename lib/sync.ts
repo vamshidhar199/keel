@@ -1,4 +1,4 @@
-import { getMetaDb } from "./db";
+import { getAdminDb, getMetaDb } from "./db";
 import { listMessageIds, fetchMessage, extractTextBody } from "./gmail";
 import {
   listConversations,
@@ -156,8 +156,13 @@ export async function updateSyncInterval(
 // Called by the scheduler every 30 minutes. Enqueues a sync for any user
 // whose sync interval has elapsed, and enqueues a daily digest for any user
 // whose chosen local hour matches now.
+//
+// Runs on the admin pool because the digest-existence check joins the
+// RLS-protected `digests` table across users. The app role (mettrie_app)
+// would fail the RLS policy without `app.user_id` set; admin (mettrie) is a
+// superuser and bypasses RLS, which is correct for this cross-tenant scan.
 export async function schedulerTick(): Promise<void> {
-  const db = getMetaDb();
+  const db = getAdminDb();
 
   const { cleanupBriefings } = await import("./briefing");
   const deleted = await cleanupBriefings();
