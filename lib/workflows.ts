@@ -394,7 +394,11 @@ export interface WorkflowRun {
 
 export interface WorkflowSourceRef {
   ref: string;
-  kind: "thread" | "page" | "commitment";
+  // 'other' kept as a wildcard for sources that don't map cleanly to a deep-
+  // link target (free-form notes, future source types). Today the workflow
+  // pipeline only emits 'thread' / 'page' / 'commitment', but the runtime
+  // payload type allows 'other' for forward compat with /api/workflow-runs.
+  kind: "thread" | "page" | "commitment" | "other";
   label: string;
 }
 
@@ -414,6 +418,46 @@ export interface RecentRunSummary {
   workflow_name: string;
   ran_at: string;
   preview: string;     // first ~160 chars of output_text
+}
+
+// Older workflow runs (and the occasional rogue model output) include raw
+// bracket "citations" like [projects/foo-bar] or [uuid-of-commitment]. Those
+// render as user-hostile noise because the markdown renderer treats them as
+// literal text. This helper rewrites them at display time:
+//
+//   [page-slug]       → markdown link "[Page Title](/pages/page-slug)"
+//   [thread-ref]      → just the human label, no link (it's a gmail ID)
+//   [commitment-uuid] → short paraphrase of the commitment text
+//   [chunk:N]         → preserved (that's the /ask citation format; render-markdown
+//                       converts it to a superscript downstream)
+//   [unknown-ref]     → stripped entirely
+//
+// Idempotent — running it on already-clean text is a no-op.
+export function renderWorkflowOutput(
+  text: string,
+  sourceRefs: WorkflowSourceRef[]
+): string {
+  if (!text) return text;
+  const byRef = new Map(sourceRefs.map((s) => [s.ref, s]));
+  return text.replace(/\[([^\]\n]+)\]/g, (match, inner: string) => {
+    // Preserve /ask-style [chunk:N] markers — render-markdown handles those.
+    if (/^chunk:\d+$/i.test(inner)) return match;
+    const src = byRef.get(inner);
+    if (!src) {
+      // Unknown ref — only strip if it looks like an internal ID (slug or UUID).
+      // Otherwise leave alone (e.g. user prose that legitimately uses brackets).
+      const looksInternal =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inner) ||
+        /^(people|companies|projects|topics)\//i.test(inner);
+      return looksInternal ? "" : match;
+    }
+    const label = (src.label || inner).trim().slice(0, 80);
+    if (src.kind === "page") return `[${label}](/pages/${src.ref})`;
+    // For thread / commitment / other refs, just use the label inline. No link
+    // because the drawer's Source items panel already gives a clickable trace
+    // and we don't want a `mailto:` for thread_refs (those need full Gmail URL).
+    return label;
+  });
 }
 
 // Surface workflow runs on /overview. Filters to successful runs in the last
@@ -677,7 +721,12 @@ Return ONLY the JSON array.`;
       const synthSystem =
         wf.prompt_template +
         (memoriesBlock ? `\n\n${memoriesBlock}` : "") +
-        "\n\nWrite a concise response in Markdown. Cite items with [ref] tags inline (e.g. [thread-abc] or [page-slug]) so the user can trace them.";
+        `\n\nOutput format:
+- Write concise Markdown — headings + bullets where helpful, no walls of text.
+- Reference sources by NATURAL NAME: people by first name, companies by company name, projects/roles by their title (e.g. "the Glean role"), commitments by a short paraphrase of the action.
+- DO NOT use bracketed citations like [some-slug] or [uuid] inline. The UI has a separate "Source items" panel that shows the full traces. Inline IDs are noise.
+- DO NOT repeat the same point in multiple sections. If you have a "what's next" or "follow-ups" section, it must add NEW information (specific next step, deadline, owner) — not restate the same items from above.
+- Lead with the most important thing first.`;
 
       const synthUser = `<context>
 ${kept.map((c) => `[${c.ref}] ${c.kind}: ${c.details}`).join("\n\n")}

@@ -14,8 +14,10 @@ import {
   nextRunAtFor,
   nextRunAtFromPreset,
   parseWorkflowDraft,
+  renderWorkflowOutput,
   updateWorkflow,
   WORKFLOW_TEMPLATES,
+  type WorkflowSourceRef,
 } from "../workflows";
 
 let userId: string;
@@ -292,6 +294,69 @@ describe("nextRunAtFor (custom + preset)", () => {
     const next = nextRunAtFor("custom", null, "UTC", now);
     expect(next.getTime() - now.getTime()).toBeGreaterThan(50 * 60 * 1000);
     expect(next.getTime() - now.getTime()).toBeLessThan(70 * 60 * 1000);
+  });
+});
+
+describe("renderWorkflowOutput", () => {
+  const refs: WorkflowSourceRef[] = [
+    { ref: "projects/glean-role", kind: "page", label: "Glean Role" },
+    { ref: "thread-abc123", kind: "thread", label: "Gabriel — Tech Lead Manager intro" },
+    {
+      ref: "12345678-1234-1234-1234-123456789abc",
+      kind: "commitment",
+      label: "Send updated resume to Gabriel",
+    },
+  ];
+
+  test("converts a page ref into a markdown link", () => {
+    const out = renderWorkflowOutput(
+      "Check status on [projects/glean-role] next week.",
+      refs
+    );
+    expect(out).toBe("Check status on [Glean Role](/pages/projects/glean-role) next week.");
+  });
+
+  test("replaces a commitment UUID with its short label", () => {
+    const out = renderWorkflowOutput(
+      "Top priority: [12345678-1234-1234-1234-123456789abc] before EOW.",
+      refs
+    );
+    expect(out).toBe("Top priority: Send updated resume to Gabriel before EOW.");
+  });
+
+  test("replaces a thread ref with just its label (no link)", () => {
+    const out = renderWorkflowOutput("Per [thread-abc123]", refs);
+    expect(out).toBe("Per Gabriel — Tech Lead Manager intro");
+  });
+
+  test("preserves /ask-style [chunk:N] markers", () => {
+    const out = renderWorkflowOutput("As noted [chunk:2] and [chunk:7].", refs);
+    expect(out).toBe("As noted [chunk:2] and [chunk:7].");
+  });
+
+  test("strips unknown but internal-looking refs (slug or UUID)", () => {
+    const out = renderWorkflowOutput(
+      "Stale ref [projects/already-deleted] and orphan [aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee].",
+      refs
+    );
+    expect(out).toBe("Stale ref  and orphan .");
+  });
+
+  test("leaves user-prose brackets alone (e.g. [TODO], [important])", () => {
+    const out = renderWorkflowOutput(
+      "Reminder [TODO]: discuss the [important] item.",
+      refs
+    );
+    expect(out).toBe("Reminder [TODO]: discuss the [important] item.");
+  });
+
+  test("idempotent on already-clean text", () => {
+    const clean = "Just plain prose with no brackets at all.";
+    expect(renderWorkflowOutput(clean, refs)).toBe(clean);
+  });
+
+  test("handles empty input", () => {
+    expect(renderWorkflowOutput("", refs)).toBe("");
   });
 });
 

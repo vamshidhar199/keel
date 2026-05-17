@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RenderMarkdown } from "../../ask/render-markdown";
+import { renderWorkflowOutput } from "@/lib/workflows";
 import { CadencePicker } from "../cadence-picker";
 import type {
   Workflow,
@@ -256,7 +257,9 @@ export function WorkflowDetail({
                 )}
                 {r.output_text && (
                   <div className="text-[13px] leading-relaxed">
-                    <RenderMarkdown content={r.output_text} />
+                    <RenderMarkdown
+                      content={renderWorkflowOutput(r.output_text, r.source_refs)}
+                    />
                   </div>
                 )}
                 {r.source_refs.length > 0 && (

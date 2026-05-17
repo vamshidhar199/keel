@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RenderMarkdown } from "../ask/render-markdown";
+import { renderWorkflowOutput } from "@/lib/workflows";
 
 interface Source {
   ref: string;
@@ -189,19 +190,24 @@ export function WorkflowRunDrawer({ runId, onClose }: Props) {
 
               {data.output_text && (
                 <article className="text-[14px] leading-relaxed">
-                  <RenderMarkdown content={data.output_text} />
+                  <RenderMarkdown
+                    content={renderWorkflowOutput(data.output_text, data.source_refs)}
+                  />
                 </article>
               )}
 
               {data.source_refs.length > 0 && (
-                <section className="space-y-2">
-                  <p
-                    className="text-[10px] uppercase tracking-widest"
+                <details className="space-y-2">
+                  <summary
+                    className="text-[10px] uppercase tracking-widest cursor-pointer hover:underline list-none flex items-center gap-1"
                     style={{ color: "var(--c-subtle)" }}
                   >
+                    <span className="material-symbols-outlined text-[12px] leading-none">
+                      expand_more
+                    </span>
                     Source items · {data.source_refs.length}
-                  </p>
-                  <ul className="space-y-2">
+                  </summary>
+                  <ul className="space-y-2 mt-2">
                     {data.source_refs.map((s) => {
                       const href =
                         s.kind === "thread"
@@ -252,7 +258,7 @@ export function WorkflowRunDrawer({ runId, onClose }: Props) {
                       );
                     })}
                   </ul>
-                </section>
+                </details>
               )}
             </>
           )}
