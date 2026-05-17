@@ -5,7 +5,9 @@ import {
   listWorkflows,
   createWorkflow,
   isCronPresetKey,
+  isValidCustomTrigger,
   WORKFLOW_TEMPLATES,
+  type WorkflowCustomTrigger,
 } from "@/lib/workflows";
 
 export async function GET() {
@@ -29,6 +31,7 @@ export async function POST(req: NextRequest) {
     name: string;
     description?: string;
     trigger_cron?: string;
+    trigger_custom?: WorkflowCustomTrigger | null;
     filter_nl?: string;
     prompt_template?: string;
   } = body;
@@ -39,6 +42,7 @@ export async function POST(req: NextRequest) {
         name: body.name ?? tpl.name,
         description: body.description ?? tpl.description,
         trigger_cron: body.trigger_cron ?? tpl.trigger_cron,
+        trigger_custom: body.trigger_custom ?? null,
         filter_nl: body.filter_nl ?? tpl.filter_nl,
         prompt_template: body.prompt_template ?? tpl.prompt_template,
       };
@@ -56,9 +60,22 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (!isCronPresetKey(triggerCron)) {
+
+  let triggerCustom: WorkflowCustomTrigger | null = null;
+  if (triggerCron === "custom") {
+    if (!isValidCustomTrigger(base.trigger_custom)) {
+      return NextResponse.json(
+        {
+          error:
+            "Custom trigger requires trigger_custom: { weekdays: int[] (0-6, unique), hour: 0-23, minute: 0-59 }",
+        },
+        { status: 400 }
+      );
+    }
+    triggerCustom = base.trigger_custom;
+  } else if (!isCronPresetKey(triggerCron)) {
     return NextResponse.json(
-      { error: "trigger_cron must be a valid preset key" },
+      { error: "trigger_cron must be a valid preset key or 'custom'" },
       { status: 400 }
     );
   }
@@ -76,7 +93,8 @@ export async function POST(req: NextRequest) {
       {
         name,
         description: base.description,
-        trigger_cron: triggerCron,
+        trigger_cron: triggerCron as "custom" | (typeof triggerCron & string),
+        trigger_custom: triggerCustom,
         filter_nl: base.filter_nl,
         prompt_template: promptTemplate,
       },

@@ -38,22 +38,39 @@ export function isCronPresetKey(s: string): s is CronPresetKey {
   return Object.prototype.hasOwnProperty.call(CRON_PRESETS, s);
 }
 
-// Compute the next firing time of a preset in the user's timezone, strictly
-// after `after`. Works by stepping forward day-by-day (max 7 iterations) and
-// resolving the IANA-tz hour via Intl.DateTimeFormat.
-export function nextRunAtFromPreset(
-  presetKey: CronPresetKey,
+// Custom cadence — when the user picks "Custom…" instead of a preset.
+export interface WorkflowCustomTrigger {
+  weekdays: number[];  // 0=Sun..6=Sat, empty = every day
+  hour: number;        // 0-23, local time
+  minute: number;      // 0-59
+}
+
+export function isValidCustomTrigger(v: unknown): v is WorkflowCustomTrigger {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Partial<WorkflowCustomTrigger>;
+  if (!Array.isArray(o.weekdays)) return false;
+  if (!o.weekdays.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) return false;
+  if (new Set(o.weekdays).size !== o.weekdays.length) return false; // no dupes
+  if (!Number.isInteger(o.hour) || o.hour! < 0 || o.hour! > 23) return false;
+  if (!Number.isInteger(o.minute) || o.minute! < 0 || o.minute! > 59) return false;
+  return true;
+}
+
+// Core scheduling math: find the next instant in `tz` matching a weekday
+// filter and hour:minute, strictly after `after`. Shared by both preset and
+// custom paths.
+function nextRunForSchedule(
+  weekdays: number[],
+  hour: number,
+  minute: number,
   timezone: string,
   after: Date = new Date()
 ): Date {
-  const preset = CRON_PRESETS[presetKey];
   const tz = timezone && timezone.length > 0 ? timezone : "UTC";
+  const wanted = weekdays.length > 0 ? new Set(weekdays) : null;
 
   for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
-    // Compute the candidate day (relative to `after`).
     const candidate = new Date(after.getTime() + dayOffset * 24 * 60 * 60 * 1000);
-
-    // Determine candidate's local weekday + render YYYY-MM-DD in that tz.
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: tz,
       weekday: "short",
@@ -67,16 +84,47 @@ export function nextRunAtFromPreset(
     const m = parts.find((p) => p.type === "month")?.value;
     const d = parts.find((p) => p.type === "day")?.value;
 
-    if (preset.weekdays.length > 0 && !preset.weekdays.includes(dow)) continue;
+    if (wanted && !wanted.has(dow)) continue;
 
-    // Build the local-time wall-clock string and convert to UTC.
-    // Trick: localTimestamp interpreted in `tz` => figure out the UTC instant.
-    const localTimestamp = `${y}-${m}-${d}T${String(preset.hour).padStart(2, "0")}:00:00`;
+    const localTimestamp =
+      `${y}-${m}-${d}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
     const fired = utcFromTzLocal(localTimestamp, tz);
     if (fired.getTime() > after.getTime()) return fired;
   }
+  return new Date(after.getTime() + 60 * 60 * 1000);
+}
 
-  // Fallback (should not hit) — fire in 1 hour.
+// Preset path — preserved for compatibility with existing callers.
+export function nextRunAtFromPreset(
+  presetKey: CronPresetKey,
+  timezone: string,
+  after: Date = new Date()
+): Date {
+  const preset = CRON_PRESETS[presetKey];
+  return nextRunForSchedule(preset.weekdays, preset.hour, 0, timezone, after);
+}
+
+// Unified dispatcher: handles both preset and custom triggers. Pass either a
+// preset key + null custom, or 'custom' + a valid WorkflowCustomTrigger.
+export function nextRunAtFor(
+  triggerCron: string,
+  triggerCustom: WorkflowCustomTrigger | null,
+  timezone: string,
+  after: Date = new Date()
+): Date {
+  if (triggerCron === "custom" && triggerCustom && isValidCustomTrigger(triggerCustom)) {
+    return nextRunForSchedule(
+      triggerCustom.weekdays,
+      triggerCustom.hour,
+      triggerCustom.minute,
+      timezone,
+      after
+    );
+  }
+  if (isCronPresetKey(triggerCron)) {
+    return nextRunAtFromPreset(triggerCron, timezone, after);
+  }
+  // Unknown trigger — fall back to firing in 1 hour so we don't loop forever.
   return new Date(after.getTime() + 60 * 60 * 1000);
 }
 
@@ -129,7 +177,8 @@ export interface Workflow {
   user_id: string;
   name: string;
   description: string;
-  trigger_cron: CronPresetKey;
+  trigger_cron: CronPresetKey | "custom";
+  trigger_custom: WorkflowCustomTrigger | null;
   filter_nl: string;
   prompt_template: string;
   delivery_type: "in_app";
@@ -146,6 +195,7 @@ interface WorkflowRow {
   name: string;
   description: string;
   trigger_cron: string;
+  trigger_custom: WorkflowCustomTrigger | null;
   filter_nl: string;
   prompt_template: string;
   delivery_type: string;
@@ -162,7 +212,8 @@ function toWorkflow(r: WorkflowRow): Workflow {
     user_id: r.user_id,
     name: r.name,
     description: r.description,
-    trigger_cron: r.trigger_cron as CronPresetKey,
+    trigger_cron: r.trigger_cron as CronPresetKey | "custom",
+    trigger_custom: r.trigger_custom,
     filter_nl: r.filter_nl,
     prompt_template: r.prompt_template,
     delivery_type: r.delivery_type as "in_app",
@@ -174,12 +225,14 @@ function toWorkflow(r: WorkflowRow): Workflow {
   };
 }
 
+const WORKFLOW_COLUMNS = `id, user_id, name, description, trigger_cron, trigger_custom,
+              filter_nl, prompt_template, delivery_type, enabled,
+              last_run_at, next_run_at, created_at, updated_at`;
+
 export async function listWorkflows(userId: string): Promise<Workflow[]> {
   return withUser(userId, async (c) => {
     const { rows } = await c.query<WorkflowRow>(
-      `SELECT id, user_id, name, description, trigger_cron, filter_nl,
-              prompt_template, delivery_type, enabled, last_run_at, next_run_at,
-              created_at, updated_at
+      `SELECT ${WORKFLOW_COLUMNS}
          FROM workflows
         ORDER BY created_at DESC`
     );
@@ -193,9 +246,7 @@ export async function getWorkflow(
 ): Promise<Workflow | null> {
   return withUser(userId, async (c) => {
     const { rows } = await c.query<WorkflowRow>(
-      `SELECT id, user_id, name, description, trigger_cron, filter_nl,
-              prompt_template, delivery_type, enabled, last_run_at, next_run_at,
-              created_at, updated_at
+      `SELECT ${WORKFLOW_COLUMNS}
          FROM workflows WHERE id = $1 LIMIT 1`,
       [id]
     );
@@ -206,7 +257,8 @@ export async function getWorkflow(
 export interface CreateWorkflowInput {
   name: string;
   description?: string;
-  trigger_cron: CronPresetKey;
+  trigger_cron: CronPresetKey | "custom";
+  trigger_custom?: WorkflowCustomTrigger | null;
   filter_nl?: string;
   prompt_template: string;
 }
@@ -216,21 +268,28 @@ export async function createWorkflow(
   input: CreateWorkflowInput,
   timezone: string
 ): Promise<Workflow> {
-  const nextRun = nextRunAtFromPreset(input.trigger_cron, timezone);
+  const customJson =
+    input.trigger_cron === "custom" && input.trigger_custom
+      ? JSON.stringify(input.trigger_custom)
+      : null;
+  const nextRun = nextRunAtFor(
+    input.trigger_cron,
+    input.trigger_custom ?? null,
+    timezone
+  );
   return withUser(userId, async (c) => {
     const { rows } = await c.query<WorkflowRow>(
       `INSERT INTO workflows
-         (user_id, name, description, trigger_cron, filter_nl, prompt_template,
-          delivery_type, enabled, next_run_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'in_app', true, $7)
-       RETURNING id, user_id, name, description, trigger_cron, filter_nl,
-                 prompt_template, delivery_type, enabled, last_run_at, next_run_at,
-                 created_at, updated_at`,
+         (user_id, name, description, trigger_cron, trigger_custom,
+          filter_nl, prompt_template, delivery_type, enabled, next_run_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, 'in_app', true, $8)
+       RETURNING ${WORKFLOW_COLUMNS}`,
       [
         userId,
         input.name.slice(0, 120),
         (input.description ?? "").slice(0, 400),
         input.trigger_cron,
+        customJson,
         (input.filter_nl ?? "").slice(0, 600),
         input.prompt_template.slice(0, 2000),
         nextRun,
@@ -243,7 +302,8 @@ export async function createWorkflow(
 export interface UpdateWorkflowInput {
   name?: string;
   description?: string;
-  trigger_cron?: CronPresetKey;
+  trigger_cron?: CronPresetKey | "custom";
+  trigger_custom?: WorkflowCustomTrigger | null;
   filter_nl?: string;
   prompt_template?: string;
   enabled?: boolean;
@@ -255,25 +315,45 @@ export async function updateWorkflow(
   input: UpdateWorkflowInput,
   timezone: string
 ): Promise<Workflow | null> {
-  const next =
-    input.trigger_cron !== undefined
-      ? nextRunAtFromPreset(input.trigger_cron, timezone)
-      : null;
+  // Recompute next_run_at when the trigger changes. We need the BEFORE-state
+  // of the row to know what trigger to combine with; easiest to read first.
+  let next: Date | null = null;
+  if (input.trigger_cron !== undefined || input.trigger_custom !== undefined) {
+    const existing = await getWorkflow(userId, id);
+    if (existing) {
+      const effectiveCron = input.trigger_cron ?? existing.trigger_cron;
+      const effectiveCustom =
+        input.trigger_custom !== undefined ? input.trigger_custom : existing.trigger_custom;
+      next = nextRunAtFor(effectiveCron, effectiveCustom, timezone);
+    }
+  }
+  const customJsonForUpdate =
+    input.trigger_custom !== undefined
+      ? input.trigger_custom === null
+        ? null
+        : JSON.stringify(input.trigger_custom)
+      : undefined;
   return withUser(userId, async (c) => {
+    // We need separate handling for "set to null" vs "leave unchanged" on
+    // trigger_custom. The COALESCE approach can't distinguish them, so we
+    // pass a sentinel string and rebuild the JSONB column explicitly.
     const { rows } = await c.query<WorkflowRow>(
       `UPDATE workflows SET
          name            = COALESCE($1, name),
          description     = COALESCE($2, description),
          trigger_cron    = COALESCE($3, trigger_cron),
+         trigger_custom  = CASE
+             WHEN $9::text = '__leave__' THEN trigger_custom
+             WHEN $9::text = '__null__'  THEN NULL
+             ELSE $9::jsonb
+           END,
          filter_nl       = COALESCE($4, filter_nl),
          prompt_template = COALESCE($5, prompt_template),
          enabled         = COALESCE($6, enabled),
          next_run_at     = COALESCE($7, next_run_at),
          updated_at      = now()
        WHERE id = $8
-       RETURNING id, user_id, name, description, trigger_cron, filter_nl,
-                 prompt_template, delivery_type, enabled, last_run_at, next_run_at,
-                 created_at, updated_at`,
+       RETURNING ${WORKFLOW_COLUMNS}`,
       [
         input.name?.slice(0, 120) ?? null,
         input.description?.slice(0, 400) ?? null,
@@ -283,6 +363,11 @@ export async function updateWorkflow(
         typeof input.enabled === "boolean" ? input.enabled : null,
         next,
         id,
+        customJsonForUpdate === undefined
+          ? "__leave__"
+          : customJsonForUpdate === null
+          ? "__null__"
+          : customJsonForUpdate,
       ]
     );
     return rows[0] ? toWorkflow(rows[0]) : null;
@@ -637,8 +722,9 @@ Now respond per the system instructions, citing items by ref.`;
         JSON.stringify(result.source_refs),
       ]
     );
-    const nextRun = nextRunAtFromPreset(
+    const nextRun = nextRunAtFor(
       wf.trigger_cron,
+      wf.trigger_custom,
       ctx.timezone,
       new Date()
     );

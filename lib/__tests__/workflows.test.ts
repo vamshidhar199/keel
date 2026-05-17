@@ -7,9 +7,11 @@ import {
   deleteWorkflow,
   getWorkflow,
   isCronPresetKey,
+  isValidCustomTrigger,
   listDueWorkflows,
   listWorkflows,
   listWorkflowRuns,
+  nextRunAtFor,
   nextRunAtFromPreset,
   parseWorkflowDraft,
   updateWorkflow,
@@ -217,6 +219,79 @@ describe("templates", () => {
       expect(t.name.length).toBeGreaterThan(0);
       expect(t.prompt_template.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("isValidCustomTrigger", () => {
+  test("accepts a valid trigger", () => {
+    expect(
+      isValidCustomTrigger({ weekdays: [1, 2, 3, 4, 5], hour: 9, minute: 30 })
+    ).toBe(true);
+    expect(isValidCustomTrigger({ weekdays: [], hour: 0, minute: 0 })).toBe(true);
+    expect(isValidCustomTrigger({ weekdays: [0, 6], hour: 23, minute: 59 })).toBe(true);
+  });
+
+  test("rejects bad weekdays", () => {
+    expect(isValidCustomTrigger({ weekdays: [7], hour: 9, minute: 0 })).toBe(false);
+    expect(isValidCustomTrigger({ weekdays: [-1], hour: 9, minute: 0 })).toBe(false);
+    expect(isValidCustomTrigger({ weekdays: [1, 1], hour: 9, minute: 0 })).toBe(false);
+    expect(isValidCustomTrigger({ weekdays: "mon", hour: 9, minute: 0 })).toBe(false);
+  });
+
+  test("rejects bad hour / minute", () => {
+    expect(isValidCustomTrigger({ weekdays: [1], hour: 24, minute: 0 })).toBe(false);
+    expect(isValidCustomTrigger({ weekdays: [1], hour: -1, minute: 0 })).toBe(false);
+    expect(isValidCustomTrigger({ weekdays: [1], hour: 9, minute: 60 })).toBe(false);
+    expect(isValidCustomTrigger({ weekdays: [1], hour: 9.5, minute: 0 })).toBe(false);
+  });
+
+  test("rejects non-objects", () => {
+    expect(isValidCustomTrigger(null)).toBe(false);
+    expect(isValidCustomTrigger("foo")).toBe(false);
+    expect(isValidCustomTrigger([])).toBe(false);
+  });
+});
+
+describe("nextRunAtFor (custom + preset)", () => {
+  test("custom: Tuesday 3:30 PM UTC fires next on a Tuesday at 15:30", () => {
+    const fri = new Date("2026-05-15T12:00:00Z");
+    const next = nextRunAtFor(
+      "custom",
+      { weekdays: [2], hour: 15, minute: 30 },
+      "UTC",
+      fri
+    );
+    expect(next.getUTCDay()).toBe(2);
+    expect(next.getUTCHours()).toBe(15);
+    expect(next.getUTCMinutes()).toBe(30);
+    expect(next.getTime()).toBeGreaterThan(fri.getTime());
+  });
+
+  test("custom with every day fires next day if already past today's time", () => {
+    const today = new Date("2026-05-15T20:00:00Z"); // 8 PM UTC
+    const next = nextRunAtFor(
+      "custom",
+      { weekdays: [], hour: 9, minute: 0 }, // 9 AM every day
+      "UTC",
+      today
+    );
+    expect(next.getUTCHours()).toBe(9);
+    expect(next.getTime()).toBeGreaterThan(today.getTime());
+    expect(next.getUTCDate()).toBe(today.getUTCDate() + 1);
+  });
+
+  test("falls back to preset path when trigger_cron is a preset key", () => {
+    const presetNext = nextRunAtFromPreset("daily_8am", "UTC", new Date());
+    const dispatcherNext = nextRunAtFor("daily_8am", null, "UTC", new Date());
+    // Both within a few seconds.
+    expect(Math.abs(presetNext.getTime() - dispatcherNext.getTime())).toBeLessThan(2000);
+  });
+
+  test("custom without trigger_custom falls back to 1h", () => {
+    const now = new Date();
+    const next = nextRunAtFor("custom", null, "UTC", now);
+    expect(next.getTime() - now.getTime()).toBeGreaterThan(50 * 60 * 1000);
+    expect(next.getTime() - now.getTime()).toBeLessThan(70 * 60 * 1000);
   });
 });
 

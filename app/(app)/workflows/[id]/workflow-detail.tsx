@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { RenderMarkdown } from "../../ask/render-markdown";
-import type { Workflow, WorkflowRun, CronPreset } from "@/lib/workflows";
+import { CadencePicker } from "../cadence-picker";
+import type {
+  Workflow,
+  WorkflowRun,
+  CronPreset,
+  WorkflowCustomTrigger,
+} from "@/lib/workflows";
 
 interface Props {
   initialWorkflow: Workflow;
@@ -19,9 +25,16 @@ export function WorkflowDetail({
 }: Props) {
   const [workflow, setWorkflow] = useState<Workflow>(initialWorkflow);
   const [runs, setRuns] = useState<WorkflowRun[]>(initialRuns);
-  const [draft, setDraft] = useState({
+  const [draft, setDraft] = useState<{
+    name: string;
+    trigger_cron: string;
+    trigger_custom: WorkflowCustomTrigger | null;
+    filter_nl: string;
+    prompt_template: string;
+  }>({
     name: workflow.name,
     trigger_cron: workflow.trigger_cron,
+    trigger_custom: workflow.trigger_custom,
     filter_nl: workflow.filter_nl,
     prompt_template: workflow.prompt_template,
   });
@@ -77,6 +90,7 @@ export function WorkflowDetail({
     setDraft({
       name: workflow.name,
       trigger_cron: workflow.trigger_cron,
+      trigger_custom: workflow.trigger_custom,
       filter_nl: workflow.filter_nl,
       prompt_template: workflow.prompt_template,
     });
@@ -138,21 +152,15 @@ export function WorkflowDetail({
           className="w-full rounded-lg px-3 py-2 text-sm glass-card"
           style={{ color: "var(--c-fg)", background: "var(--c-card)" }}
         />
-        <select
-          value={draft.trigger_cron}
-          onChange={(e) => {
-            setDraft((d) => ({ ...d, trigger_cron: e.target.value as Workflow["trigger_cron"] }));
+        <CadencePicker
+          presets={cronPresets}
+          cron={draft.trigger_cron}
+          custom={draft.trigger_custom}
+          onChange={({ cron, custom }) => {
+            setDraft((d) => ({ ...d, trigger_cron: cron, trigger_custom: custom }));
             setDirty(true);
           }}
-          className="w-full rounded-lg px-3 py-2 text-sm glass-card cursor-pointer"
-          style={{ color: "var(--c-fg)", background: "var(--c-card)" }}
-        >
-          {cronPresets.map((p) => (
-            <option key={p.key} value={p.key}>
-              {p.label}
-            </option>
-          ))}
-        </select>
+        />
         <div>
           <p className="text-[11px] mb-1.5" style={{ color: "var(--c-subtle)" }}>
             Filter (optional)
@@ -191,6 +199,7 @@ export function WorkflowDetail({
                 setDraft({
                   name: workflow.name,
                   trigger_cron: workflow.trigger_cron,
+                  trigger_custom: workflow.trigger_custom,
                   filter_nl: workflow.filter_nl,
                   prompt_template: workflow.prompt_template,
                 });

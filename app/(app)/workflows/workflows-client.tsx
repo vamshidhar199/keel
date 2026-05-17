@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import type { Workflow, WorkflowTemplate, CronPreset } from "@/lib/workflows";
+import type {
+  Workflow,
+  WorkflowTemplate,
+  CronPreset,
+  WorkflowCustomTrigger,
+} from "@/lib/workflows";
+import { CadencePicker } from "./cadence-picker";
 
 interface Props {
   initialWorkflows: Workflow[];
@@ -14,6 +20,7 @@ interface DraftSpec {
   name: string;
   description: string;
   trigger_cron: string;
+  trigger_custom: WorkflowCustomTrigger | null;
   filter_nl: string;
   prompt_template: string;
 }
@@ -22,6 +29,7 @@ const EMPTY_DRAFT: DraftSpec = {
   name: "",
   description: "",
   trigger_cron: "weekday_8am",
+  trigger_custom: null,
   filter_nl: "",
   prompt_template: "",
 };
@@ -105,6 +113,7 @@ export function WorkflowsClient({
         name: d.name,
         description: d.description ?? "",
         trigger_cron: d.trigger_cron,
+        trigger_custom: null,
         filter_nl: d.filter_nl ?? "",
         prompt_template: d.prompt_template,
       });
@@ -120,6 +129,7 @@ export function WorkflowsClient({
       name: tpl.name,
       description: tpl.description,
       trigger_cron: tpl.trigger_cron,
+      trigger_custom: null,
       filter_nl: tpl.filter_nl,
       prompt_template: tpl.prompt_template,
     });
@@ -364,20 +374,14 @@ export function WorkflowsClient({
                 className="w-full rounded-lg px-3 py-2 text-sm glass-card"
                 style={{ color: "var(--c-fg)", background: "var(--c-card)" }}
               />
-              <select
-                value={draft.trigger_cron}
-                onChange={(e) =>
-                  setDraft((d) => ({ ...d, trigger_cron: e.target.value }))
+              <CadencePicker
+                presets={cronPresets}
+                cron={draft.trigger_cron}
+                custom={draft.trigger_custom}
+                onChange={({ cron, custom }) =>
+                  setDraft((d) => ({ ...d, trigger_cron: cron, trigger_custom: custom }))
                 }
-                className="w-full rounded-lg px-3 py-2 text-sm glass-card cursor-pointer"
-                style={{ color: "var(--c-fg)", background: "var(--c-card)" }}
-              >
-                {cronPresets.map((p) => (
-                  <option key={p.key} value={p.key}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              />
               <textarea
                 value={draft.filter_nl}
                 onChange={(e) =>

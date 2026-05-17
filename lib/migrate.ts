@@ -382,6 +382,12 @@ ALTER TABLE user_preferences
 ALTER TABLE user_preferences
   ADD COLUMN IF NOT EXISTS bento_layout JSONB NOT NULL DEFAULT '[]'::jsonb;
 
+-- Custom workflow cadence. When workflows.trigger_cron = 'custom', this
+-- JSONB holds { weekdays: int[], hour: int, minute: int }. NULL means
+-- the workflow is using one of the preset keys.
+ALTER TABLE workflows
+  ADD COLUMN IF NOT EXISTS trigger_custom JSONB;
+
 ALTER TABLE raw_events
   ADD COLUMN IF NOT EXISTS is_from_user BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_raw_events_user_thread_from

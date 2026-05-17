@@ -6,6 +6,8 @@ import {
   updateWorkflow,
   deleteWorkflow,
   isCronPresetKey,
+  isValidCustomTrigger,
+  type WorkflowCustomTrigger,
 } from "@/lib/workflows";
 
 export async function GET(
@@ -33,11 +35,44 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
 
-  if (body.trigger_cron !== undefined && !isCronPresetKey(body.trigger_cron)) {
-    return NextResponse.json(
-      { error: "trigger_cron must be a valid preset key" },
-      { status: 400 }
-    );
+  if (body.trigger_cron !== undefined) {
+    if (
+      body.trigger_cron !== "custom" &&
+      !isCronPresetKey(body.trigger_cron)
+    ) {
+      return NextResponse.json(
+        { error: "trigger_cron must be a valid preset key or 'custom'" },
+        { status: 400 }
+      );
+    }
+    if (body.trigger_cron === "custom" && !isValidCustomTrigger(body.trigger_custom)) {
+      return NextResponse.json(
+        {
+          error:
+            "When setting trigger_cron='custom', trigger_custom must be { weekdays: int[] (0-6), hour: 0-23, minute: 0-59 }",
+        },
+        { status: 400 }
+      );
+    }
+  }
+
+  // trigger_custom can also be sent without changing the preset (e.g. tweaking
+  // the day-of-week while keeping it custom).
+  let triggerCustomInput: WorkflowCustomTrigger | null | undefined = undefined;
+  if (body.trigger_custom !== undefined) {
+    if (body.trigger_custom === null) {
+      triggerCustomInput = null;
+    } else if (isValidCustomTrigger(body.trigger_custom)) {
+      triggerCustomInput = body.trigger_custom;
+    } else {
+      return NextResponse.json(
+        {
+          error:
+            "trigger_custom must be { weekdays: int[] (0-6), hour: 0-23, minute: 0-59 } or null",
+        },
+        { status: 400 }
+      );
+    }
   }
 
   const db = getMetaDb();
@@ -54,6 +89,7 @@ export async function PATCH(
       name: typeof body.name === "string" ? body.name.trim() : undefined,
       description: typeof body.description === "string" ? body.description : undefined,
       trigger_cron: typeof body.trigger_cron === "string" ? body.trigger_cron : undefined,
+      trigger_custom: triggerCustomInput,
       filter_nl: typeof body.filter_nl === "string" ? body.filter_nl : undefined,
       prompt_template:
         typeof body.prompt_template === "string" ? body.prompt_template.trim() : undefined,
