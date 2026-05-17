@@ -388,6 +388,13 @@ ALTER TABLE user_preferences
 ALTER TABLE workflows
   ADD COLUMN IF NOT EXISTS trigger_custom JSONB;
 
+-- Tag every llm_costs row with which key paid for the call: 'user' = the
+-- user's own API key (no cost exposure to us), 'shared' = our env-var
+-- fallback. Lets us audit shared-key spend and circuit-break on a global
+-- daily ceiling.
+ALTER TABLE llm_costs
+  ADD COLUMN IF NOT EXISTS key_source TEXT NOT NULL DEFAULT 'user';
+
 ALTER TABLE raw_events
   ADD COLUMN IF NOT EXISTS is_from_user BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_raw_events_user_thread_from

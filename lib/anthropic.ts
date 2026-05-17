@@ -1,16 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getMetaDb } from "./db";
-import { decrypt } from "./crypto";
+import { resolveAnthropicKey, type KeySource } from "./llm-keys";
 
-async function getClient(userId: string): Promise<Anthropic> {
-  const db = getMetaDb();
-  const { rows } = await db.query(
-    "SELECT anthropic_api_key FROM user_api_keys WHERE user_id = $1",
-    [userId]
-  );
-  const key = process.env.ANTHROPIC_API_KEY || decrypt(rows[0]?.anthropic_api_key);
-  if (!key) throw new Error("No Anthropic API key configured for this user");
-  return new Anthropic({ apiKey: key });
+interface ResolvedClient {
+  client: Anthropic;
+  source: KeySource;
+}
+
+async function getClient(userId: string): Promise<ResolvedClient> {
+  const { key, source } = await resolveAnthropicKey(userId);
+  return { client: new Anthropic({ apiKey: key }), source };
 }
 
 // Model constants — change here to upgrade globally.
@@ -37,7 +36,8 @@ async function logCost(
   userId: string,
   model: string,
   inputTokens: number,
-  outputTokens: number
+  outputTokens: number,
+  source: KeySource
 ): Promise<void> {
   // Approximate cost per token (USD). Update if Anthropic pricing changes.
   const pricing: Record<string, { input: number; output: number }> = {
@@ -49,9 +49,9 @@ async function logCost(
 
   const db = getMetaDb();
   await db.query(
-    `INSERT INTO llm_costs (user_id, model, input_tokens, output_tokens, cost_usd, called_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())`,
-    [userId, model, inputTokens, outputTokens, cost]
+    `INSERT INTO llm_costs (user_id, model, input_tokens, output_tokens, cost_usd, key_source, called_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+    [userId, model, inputTokens, outputTokens, cost, source]
   );
 }
 
@@ -69,8 +69,8 @@ export async function callClaude(
 ): Promise<string> {
   await checkDailyCap(userId);
 
-  const anthropic = await getClient(userId);
-  const response = await anthropic.messages.create({
+  const { client, source } = await getClient(userId);
+  const response = await client.messages.create({
     model,
     max_tokens: opts.maxTokens ?? 4096,
     system: opts.system,
@@ -78,7 +78,7 @@ export async function callClaude(
   });
 
   const usage = response.usage;
-  await logCost(userId, model, usage.input_tokens, usage.output_tokens);
+  await logCost(userId, model, usage.input_tokens, usage.output_tokens, source);
 
   const block = response.content[0];
   if (block.type !== "text") throw new Error("Unexpected non-text response from Claude");
@@ -95,8 +95,8 @@ export async function callClaudeWithWebSearch(
 ): Promise<{ text: string; webCitations: WebCitation[] }> {
   await checkDailyCap(userId);
 
-  const anthropic = await getClient(userId);
-  const response = await anthropic.messages.create({
+  const { client, source } = await getClient(userId);
+  const response = await client.messages.create({
     model,
     max_tokens: opts.maxTokens ?? 4096,
     system: opts.system,
@@ -104,7 +104,7 @@ export async function callClaudeWithWebSearch(
     tools: [{ type: "web_search_20250305", name: "web_search" }] as any,
   });
 
-  await logCost(userId, model, response.usage.input_tokens, response.usage.output_tokens);
+  await logCost(userId, model, response.usage.input_tokens, response.usage.output_tokens, source);
 
   let text = "";
   const webCitations: WebCitation[] = [];
@@ -135,8 +135,8 @@ export async function streamClaudeWithWebSearch(
 ): Promise<{ text: string; webCitations: WebCitation[] }> {
   await checkDailyCap(userId);
 
-  const anthropic = await getClient(userId);
-  const stream = anthropic.messages.stream({
+  const { client, source } = await getClient(userId);
+  const stream = client.messages.stream({
     model,
     max_tokens: opts.maxTokens ?? 4096,
     system: opts.system,
@@ -149,7 +149,7 @@ export async function streamClaudeWithWebSearch(
   }
 
   const final = await stream.finalMessage();
-  await logCost(userId, model, final.usage.input_tokens, final.usage.output_tokens);
+  await logCost(userId, model, final.usage.input_tokens, final.usage.output_tokens, source);
 
   let text = "";
   const webCitations: WebCitation[] = [];
