@@ -376,6 +376,12 @@ ALTER TABLE user_preferences
 ALTER TABLE user_preferences
   ADD COLUMN IF NOT EXISTS show_workflow_runs BOOLEAN NOT NULL DEFAULT true;
 
+-- Bento layout = ordered array of { key, size } objects. Order in the array
+-- = visual order on /overview. size = 'normal' (1 col) or 'wide' (full row).
+-- Cards not in the array fall back to default order, default size 'normal'.
+ALTER TABLE user_preferences
+  ADD COLUMN IF NOT EXISTS bento_layout JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 ALTER TABLE raw_events
   ADD COLUMN IF NOT EXISTS is_from_user BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_raw_events_user_thread_from

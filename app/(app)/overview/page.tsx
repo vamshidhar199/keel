@@ -15,6 +15,7 @@ import { TimezoneSync } from "./timezone-sync";
 import { LastSeenSync } from "./last-seen-sync";
 import { DoneForToday } from "./done-for-today";
 import { DrawerMount } from "./drawer-mount";
+import { BentoBoard, type BentoCardDef, type LayoutEntry } from "./bento-board";
 
 interface Prefs {
   digest_enabled: boolean;
@@ -24,6 +25,7 @@ interface Prefs {
   show_quiet_but_important: boolean;
   show_opportunities: boolean;
   show_workflow_runs: boolean;
+  bento_layout: LayoutEntry[];
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -34,6 +36,7 @@ const DEFAULT_PREFS: Prefs = {
   show_quiet_but_important: true,
   show_opportunities: true,
   show_workflow_runs: true,
+  bento_layout: [],
 };
 
 async function getUserContext(userId: string) {
@@ -46,7 +49,7 @@ async function getUserContext(userId: string) {
     db.query<Prefs>(
       `SELECT digest_enabled, show_commitments, show_awaiting_reply,
               show_active_threads, show_quiet_but_important, show_opportunities,
-              show_workflow_runs
+              show_workflow_runs, bento_layout
        FROM user_preferences WHERE user_id = $1`,
       [userId]
     ),
@@ -164,30 +167,59 @@ export default async function OverviewPage() {
           </div>
         </section>
 
-        {/* Bento grid */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {prefs.show_commitments && (
-            <CommitmentsCard initial={liveCommitments} digestId={digestId} />
-          )}
-          {prefs.show_awaiting_reply && (
-            <AwaitingReplyCard items={awaitingReply} digestId={digestId} />
-          )}
-          {prefs.show_active_threads && (
-            <ActiveThreadsCard items={activeThreads} digestId={digestId} />
-          )}
-          {prefs.show_quiet_but_important && (
-            <QuietCard items={quiet} digestId={digestId} />
-          )}
-          {prefs.show_opportunities && (
-            <OpportunitiesCard items={opportunities} digestId={digestId} />
-          )}
-          {prefs.show_workflow_runs && (
-            <WorkflowRunsCard items={recentRuns} digestId={digestId} />
-          )}
-          {recipes.map((r) => (
-            <RecipeCard key={r.recipe_id} card={r} digestId={digestId} />
-          ))}
-        </section>
+        {/* Bento grid — orderable / resizable via the Edit layout toggle */}
+        {(() => {
+          const cards: BentoCardDef[] = [
+            {
+              key: "commitments",
+              hideFlag: "show_commitments",
+              node: <CommitmentsCard initial={liveCommitments} digestId={digestId} />,
+            },
+            {
+              key: "awaiting_reply",
+              hideFlag: "show_awaiting_reply",
+              node: <AwaitingReplyCard items={awaitingReply} digestId={digestId} />,
+            },
+            {
+              key: "active_threads",
+              hideFlag: "show_active_threads",
+              node: <ActiveThreadsCard items={activeThreads} digestId={digestId} />,
+            },
+            {
+              key: "quiet_but_important",
+              hideFlag: "show_quiet_but_important",
+              node: <QuietCard items={quiet} digestId={digestId} />,
+            },
+            {
+              key: "opportunities",
+              hideFlag: "show_opportunities",
+              node: <OpportunitiesCard items={opportunities} digestId={digestId} />,
+            },
+            {
+              key: "workflow_runs",
+              hideFlag: "show_workflow_runs",
+              node: <WorkflowRunsCard items={recentRuns} digestId={digestId} />,
+            },
+            ...recipes.map((r) => ({
+              key: `recipe:${r.recipe_id}`,
+              node: <RecipeCard card={r} digestId={digestId} />,
+            })),
+          ];
+          return (
+            <BentoBoard
+              cards={cards}
+              initialLayout={prefs.bento_layout ?? []}
+              initialShowFlags={{
+                show_commitments: prefs.show_commitments,
+                show_awaiting_reply: prefs.show_awaiting_reply,
+                show_active_threads: prefs.show_active_threads,
+                show_quiet_but_important: prefs.show_quiet_but_important,
+                show_opportunities: prefs.show_opportunities,
+                show_workflow_runs: prefs.show_workflow_runs,
+              }}
+            />
+          );
+        })()}
 
         <DoneForToday meta={meta} />
 

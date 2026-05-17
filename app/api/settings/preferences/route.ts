@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getMetaDb } from "@/lib/db";
 
+export interface BentoLayoutEntry {
+  key: string;
+  size: "normal" | "wide";
+}
+
 export interface UserPreferences {
   digest_enabled: boolean;
   digest_hour_local: number;
@@ -12,6 +17,7 @@ export interface UserPreferences {
   show_opportunities: boolean;
   show_workflow_runs: boolean;
   ai_memories: string;
+  bento_layout: BentoLayoutEntry[];
 }
 
 const DEFAULTS: UserPreferences = {
@@ -24,9 +30,26 @@ const DEFAULTS: UserPreferences = {
   show_opportunities: true,
   show_workflow_runs: true,
   ai_memories: "",
+  bento_layout: [],
 };
 
 const MAX_MEMORIES_LEN = 4000;
+const MAX_LAYOUT_ENTRIES = 40;
+
+function sanitizeLayout(raw: unknown): BentoLayoutEntry[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: BentoLayoutEntry[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const k = (item as { key?: unknown }).key;
+    const s = (item as { size?: unknown }).size;
+    if (typeof k !== "string" || k.length === 0 || k.length > 80) continue;
+    const size: BentoLayoutEntry["size"] = s === "wide" ? "wide" : "normal";
+    out.push({ key: k, size });
+    if (out.length >= MAX_LAYOUT_ENTRIES) break;
+  }
+  return out;
+}
 
 export async function GET() {
   const session = await auth();
@@ -39,7 +62,8 @@ export async function GET() {
     `SELECT digest_enabled, digest_hour_local,
             show_commitments, show_awaiting_reply,
             show_active_threads, show_quiet_but_important,
-            show_opportunities, show_workflow_runs, ai_memories
+            show_opportunities, show_workflow_runs, ai_memories,
+            bento_layout
      FROM user_preferences WHERE user_id = $1`,
     [session.user.id]
   );
@@ -68,14 +92,20 @@ export async function PATCH(req: NextRequest) {
       ? body.ai_memories.slice(0, MAX_MEMORIES_LEN)
       : null;
 
+  const bentoLayout =
+    body.bento_layout !== undefined ? sanitizeLayout(body.bento_layout) : null;
+  const bentoLayoutJson = bentoLayout !== null ? JSON.stringify(bentoLayout) : null;
+
   const db = getMetaDb();
   await db.query(
     `INSERT INTO user_preferences
        (user_id, digest_enabled, digest_hour_local,
         show_commitments, show_awaiting_reply,
         show_active_threads, show_quiet_but_important,
-        show_opportunities, show_workflow_runs, ai_memories, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, ''), now())
+        show_opportunities, show_workflow_runs, ai_memories,
+        bento_layout, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, ''),
+             COALESCE($11::jsonb, '[]'::jsonb), now())
      ON CONFLICT (user_id) DO UPDATE SET
        digest_enabled            = COALESCE($2, user_preferences.digest_enabled),
        digest_hour_local         = COALESCE($3, user_preferences.digest_hour_local),
@@ -86,6 +116,7 @@ export async function PATCH(req: NextRequest) {
        show_opportunities        = COALESCE($8, user_preferences.show_opportunities),
        show_workflow_runs        = COALESCE($9, user_preferences.show_workflow_runs),
        ai_memories               = COALESCE($10, user_preferences.ai_memories),
+       bento_layout              = COALESCE($11::jsonb, user_preferences.bento_layout),
        updated_at                = now()`,
     [
       session.user.id,
@@ -98,6 +129,7 @@ export async function PATCH(req: NextRequest) {
       typeof body.show_opportunities === "boolean" ? body.show_opportunities : null,
       typeof body.show_workflow_runs === "boolean" ? body.show_workflow_runs : null,
       aiMemories,
+      bentoLayoutJson,
     ]
   );
 

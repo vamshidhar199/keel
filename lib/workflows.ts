@@ -362,9 +362,32 @@ export async function listRecentWorkflowRuns(
       workflow_id: r.workflow_id,
       workflow_name: r.workflow_name,
       ran_at: r.ran_at.toISOString(),
-      preview: (r.output_text ?? "").replace(/\s+/g, " ").trim().slice(0, 200),
+      preview: stripMarkdown(r.output_text ?? "").slice(0, 200),
     }));
   });
+}
+
+// Strip the most common markdown syntax (headings, emphasis, lists, code,
+// links, citation tags) so card previews show clean prose instead of raw `#`s
+// and `**`s. Not a full markdown parser; just gets the preview readable.
+export function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[chunk:\d+\]/g, "")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    .replace(/^\s{0,3}\d+\.\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "$1")
+    .replace(/(?<!_)_([^_]+)_(?!_)/g, "$1")
+    .replace(/^\s*[-*_]{3,}\s*$/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export async function listWorkflowRuns(

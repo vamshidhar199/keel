@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { RenderMarkdown } from "../../ask/render-markdown";
 import type { Workflow, WorkflowRun, CronPreset } from "@/lib/workflows";
 
 interface Props {
@@ -245,12 +246,9 @@ export function WorkflowDetail({
                   </p>
                 )}
                 {r.output_text && (
-                  <pre
-                    className="whitespace-pre-wrap text-[13px] leading-relaxed font-sans"
-                    style={{ color: "var(--c-fg)" }}
-                  >
-                    {r.output_text}
-                  </pre>
+                  <div className="text-[13px] leading-relaxed">
+                    <RenderMarkdown content={r.output_text} />
+                  </div>
                 )}
                 {r.source_refs.length > 0 && (
                   <details className="pt-1">
