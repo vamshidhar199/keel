@@ -116,6 +116,21 @@ export default async function SettingsPage() {
           />
         </section>
 
+        {/* Usage */}
+        <section>
+          <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>Usage</p>
+          <Link
+            href="/usage"
+            className="glass-card rounded-xl flex items-center justify-between px-5 py-4 transition-opacity hover:opacity-80"
+          >
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--c-fg)" }}>API spend</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-subtle)" }}>Today, last 7 days, last 30 days — broken down by model and key</p>
+            </div>
+            <span className="material-symbols-outlined text-xl leading-none" style={{ color: "var(--c-muted)" }}>chevron_right</span>
+          </Link>
+        </section>
+
         {/* Your knowledge */}
         <section>
           <p className="text-[10px] uppercase tracking-widest mb-3" style={{ color: "var(--c-subtle)" }}>Your knowledge</p>
