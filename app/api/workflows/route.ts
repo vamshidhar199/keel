@@ -6,8 +6,10 @@ import {
   createWorkflow,
   isCronPresetKey,
   isValidCustomTrigger,
+  isLookbackHours,
   WORKFLOW_TEMPLATES,
   type WorkflowCustomTrigger,
+  type LookbackHours,
 } from "@/lib/workflows";
 
 export async function GET() {
@@ -34,6 +36,7 @@ export async function POST(req: NextRequest) {
     trigger_custom?: WorkflowCustomTrigger | null;
     filter_nl?: string;
     prompt_template?: string;
+    lookback_hours?: number;
   } = body;
   if (typeof body.template === "string") {
     const tpl = WORKFLOW_TEMPLATES.find((t) => t.key === body.template);
@@ -45,6 +48,7 @@ export async function POST(req: NextRequest) {
         trigger_custom: body.trigger_custom ?? null,
         filter_nl: body.filter_nl ?? tpl.filter_nl,
         prompt_template: body.prompt_template ?? tpl.prompt_template,
+        lookback_hours: body.lookback_hours ?? tpl.lookback_hours,
       };
     }
   }
@@ -80,6 +84,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let lookbackHours: LookbackHours | undefined;
+  if (base.lookback_hours !== undefined) {
+    if (!isLookbackHours(base.lookback_hours)) {
+      return NextResponse.json(
+        { error: "lookback_hours must be one of: 12, 24, 48, 72, 168, 336, 720" },
+        { status: 400 }
+      );
+    }
+    lookbackHours = base.lookback_hours;
+  }
+
   const db = getMetaDb();
   const { rows } = await db.query<{ timezone: string }>(
     `SELECT timezone FROM users WHERE id = $1`,
@@ -97,6 +112,7 @@ export async function POST(req: NextRequest) {
         trigger_custom: triggerCustom,
         filter_nl: base.filter_nl,
         prompt_template: promptTemplate,
+        lookback_hours: lookbackHours,
       },
       timezone
     );

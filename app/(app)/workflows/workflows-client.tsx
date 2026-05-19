@@ -8,6 +8,11 @@ import type {
   CronPreset,
   WorkflowCustomTrigger,
 } from "@/lib/workflows";
+import {
+  LOOKBACK_HOURS_CHOICES,
+  describeLookback,
+  type LookbackHours,
+} from "@/lib/workflow-shared";
 import { CadencePicker } from "./cadence-picker";
 
 interface Props {
@@ -23,6 +28,7 @@ interface DraftSpec {
   trigger_custom: WorkflowCustomTrigger | null;
   filter_nl: string;
   prompt_template: string;
+  lookback_hours: LookbackHours;
 }
 
 const EMPTY_DRAFT: DraftSpec = {
@@ -32,6 +38,7 @@ const EMPTY_DRAFT: DraftSpec = {
   trigger_custom: null,
   filter_nl: "",
   prompt_template: "",
+  lookback_hours: 24,
 };
 
 export function WorkflowsClient({
@@ -116,6 +123,7 @@ export function WorkflowsClient({
         trigger_custom: null,
         filter_nl: d.filter_nl ?? "",
         prompt_template: d.prompt_template,
+        lookback_hours: d.lookback_hours ?? 24,
       });
       setDraftMsg("Draft below. Review and create.");
       setShowMoreWays(true);
@@ -132,6 +140,7 @@ export function WorkflowsClient({
       trigger_custom: null,
       filter_nl: tpl.filter_nl,
       prompt_template: tpl.prompt_template,
+      lookback_hours: tpl.lookback_hours,
     });
     setShowMoreWays(true);
   }
@@ -382,6 +391,31 @@ export function WorkflowsClient({
                   setDraft((d) => ({ ...d, trigger_cron: cron, trigger_custom: custom }))
                 }
               />
+              <div>
+                <label
+                  className="block text-[11px] mb-1.5"
+                  style={{ color: "var(--c-subtle)" }}
+                >
+                  How far back to look each run
+                </label>
+                <select
+                  value={draft.lookback_hours}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      lookback_hours: Number(e.target.value) as LookbackHours,
+                    }))
+                  }
+                  className="w-full rounded-lg px-3 py-2 text-[13px] glass-card"
+                  style={{ color: "var(--c-fg)", background: "var(--c-card)" }}
+                >
+                  {LOOKBACK_HOURS_CHOICES.map((h) => (
+                    <option key={h} value={h}>
+                      {describeLookback(h)}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <textarea
                 value={draft.filter_nl}
                 onChange={(e) =>

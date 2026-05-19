@@ -1,5 +1,4 @@
 import { auth } from "@/auth";
-import { listPages } from "@/lib/gbrain";
 import { withUser } from "@/lib/db";
 import { getOrGenerate } from "@/lib/briefing";
 import { callClaude, HAIKU } from "@/lib/anthropic";
@@ -20,8 +19,26 @@ export default async function AskPage() {
   // opportunities the user is exploring, not work they've done. Letting them
   // through generates wrong questions like "How long did I work at OpenAI?"
   // for users who only ever *applied* there.
+  //
+  // We pull compiled_truth (snippetted) along with title/type so the
+  // suggestion model has REAL content to ground on. Without snippets the
+  // model only sees a list of names and invents speculative connections
+  // ("How does X compare to Y", "Is A connected to B").
   const [recentPages, skills] = await Promise.all([
-    listPages(userId, { limit: 5, excludeKind: "job_listing" }),
+    withUser(userId, async (c) => {
+      const { rows } = await c.query<{
+        title: string;
+        type: string | null;
+        compiled_truth: string;
+      }>(
+        `SELECT title, type, compiled_truth
+           FROM pages
+          WHERE (kind IS NULL OR kind <> 'job_listing')
+          ORDER BY updated_at DESC
+          LIMIT 5`
+      );
+      return rows;
+    }),
     listSkills(userId, true),
   ]);
 
@@ -36,11 +53,22 @@ export default async function AskPage() {
     return <AskClient opener={null} suggestions={null} skills={pickerSkills} />;
   }
 
+  // Strip frontmatter, collapse whitespace, take first ~180 chars. Enough
+  // for the model to know what each page is about without exploding tokens.
+  function snippet(content: string): string {
+    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
+    const flat = body.replace(/\s+/g, " ").trim();
+    return flat.length > 180 ? flat.slice(0, 180) + "…" : flat;
+  }
   const pageList = recentPages
-    .map((p) => `- ${p.title}${p.type ? ` (${p.type})` : ""}`)
+    .map((p) => `- ${p.title}${p.type ? ` (${p.type})` : ""}: ${snippet(p.compiled_truth)}`)
     .join("\n");
 
-  const [openerRaw, suggestionsRaw] = await Promise.all([
+  // If an LLM call fails (e.g. exhausted credits, rate limit), render the
+  // page without that piece rather than crashing the whole route.
+  // Promise.allSettled keeps the cache uncorrupted because getOrGenerate
+  // only writes when the generator resolves.
+  const settled = await Promise.allSettled([
     getOrGenerate(userId, todayKey("ask_opener"), TTL, async () => {
       const last24h = await withUser(userId, async (client) => {
         const { rows } = await client.query<{ title: string; type: string | null }>(
@@ -73,19 +101,35 @@ export default async function AskPage() {
       );
     }),
 
-    getOrGenerate(userId, todayKey("ask_suggestions"), TTL, async () => {
+    getOrGenerate(userId, todayKey("ask_suggestions_v2"), TTL, async () => {
       const raw = await callClaude(
         userId,
         HAIKU,
         [
           {
             role: "user",
-            content: `The 5 most recent pages in this user's knowledge base:\n${pageList}\n\nReturn ONLY a JSON array of exactly 3 short, specific questions (8 words MAX each) the user would ask about their own data today. Each question must reference the actual content above. Start your response with [ and end with ]. No markdown, no code fences, no preamble.\n\nExample: ["What's driving the hiring surge?", "Who's most active this week?", "Summarize Project X status"]`,
+            content: `The 5 most recent pages in this user's knowledge base (with content snippets):
+${pageList}
+
+Generate exactly 3 short questions (8 words MAX each) the user would actually want to ask about this content.
+
+STRICT RULES — violating any of these means the question is wrong:
+- Every question must be answerable from the snippets shown above. If a fact isn't in a snippet, don't ask about it.
+- NEVER ask if two entities are "connected", "linked", or "related" unless a snippet explicitly says they are.
+- NEVER ask to "compare X to Y" unless both appear in the SAME snippet.
+- NEVER ask about financial/market/public information that isn't in the snippets (e.g. "How does Amazon compare to IEEE financially?" is wrong because the snippets are about the USER's interactions, not public data).
+- Each question must reference a specific person, project, role, decision, or claim that appears in the snippets.
+- If the 5 pages don't share enough signal for 3 grounded questions, return fewer — never invent.
+
+Return ONLY a JSON array. Start with [ and end with ]. No markdown, no code fences, no preamble.
+
+Good examples (grounded in specific content): ["What did Harry C want to discuss?", "Status of the ServiceNow proposal?", "What's outstanding with Rahul?"]
+Bad examples (speculative or generic): ["How does X compare to Y?", "Is A connected to B?", "Who's most active this week?"]`,
           },
         ],
         {
           system:
-            "You are Mettrie. Generate timely, specific questions a user would ask about their own data. Output ONLY a JSON array — no other text.",
+            "You are Mettrie. Generate questions strictly grounded in the user's actual data. Never speculate about connections between entities. Output ONLY a JSON array — no other text.",
           maxTokens: 200,
         }
       );
@@ -103,6 +147,14 @@ export default async function AskPage() {
       }
     }),
   ]);
+
+  for (const r of settled) {
+    if (r.status === "rejected") {
+      console.warn("[ask] LLM call failed, rendering without it:", r.reason);
+    }
+  }
+  const openerRaw = settled[0].status === "fulfilled" ? settled[0].value : null;
+  const suggestionsRaw = settled[1].status === "fulfilled" ? settled[1].value : null;
 
   const icons = ["trending_up", "groups", "description"] as const;
   const statVars = ["stat2", "stat1", "stat3"] as const;

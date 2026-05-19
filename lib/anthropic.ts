@@ -7,30 +7,19 @@ interface ResolvedClient {
   source: KeySource;
 }
 
+// maxRetries=8: the SDK already does retry-after-aware exponential backoff
+// on 429s (see node_modules/@anthropic-ai/sdk/.../client.ts shouldRetry +
+// retryRequest). Default is 2. Bumping to 8 buys ~5-8 minutes of cumulative
+// wait when the org TPM ceiling is saturated, which is more than the 60s
+// rolling window typically takes to recover.
 async function getClient(userId: string): Promise<ResolvedClient> {
   const { key, source } = await resolveAnthropicKey(userId);
-  return { client: new Anthropic({ apiKey: key }), source };
+  return { client: new Anthropic({ apiKey: key, maxRetries: 8 }), source };
 }
 
 // Model constants — change here to upgrade globally.
 export const HAIKU = "claude-haiku-4-5-20251001";
 export const SONNET = "claude-sonnet-4-6";
-
-// Per-user daily soft cap in USD. Rejects calls if exceeded.
-const DAILY_SOFT_CAP_USD = 5.0;
-
-async function checkDailyCap(userId: string): Promise<void> {
-  const db = getMetaDb();
-  const { rows } = await db.query(
-    `SELECT COALESCE(SUM(cost_usd), 0) AS total
-     FROM llm_costs
-     WHERE user_id = $1 AND called_at >= NOW() - INTERVAL '24 hours'`,
-    [userId]
-  );
-  if (parseFloat(rows[0].total) >= DAILY_SOFT_CAP_USD) {
-    throw new Error(`Daily LLM spend cap reached for user ${userId}`);
-  }
-}
 
 async function logCost(
   userId: string,
@@ -60,20 +49,31 @@ export interface WebCitation {
   url: string;
 }
 
+// Structured system prompt for prompt-caching callers. Blocks are sent in
+// order; mark a block with cache_control to cache it for ~5 min. Cached
+// blocks must be a PREFIX of the system. Minimum cacheable block is 1024
+// tokens for Sonnet/Haiku 4.x — Anthropic rejects smaller blocks. Pass a
+// plain string to skip caching entirely.
+export type SystemPrompt =
+  | string
+  | Array<{
+      type: "text";
+      text: string;
+      cache_control?: { type: "ephemeral" };
+    }>;
+
 // All LLM calls go through this function — never call the Anthropic client directly.
 export async function callClaude(
   userId: string,
   model: typeof HAIKU | typeof SONNET,
   messages: Anthropic.MessageParam[],
-  opts: { maxTokens?: number; system?: string } = {}
+  opts: { maxTokens?: number; system?: SystemPrompt } = {}
 ): Promise<string> {
-  await checkDailyCap(userId);
-
   const { client, source } = await getClient(userId);
   const response = await client.messages.create({
     model,
     max_tokens: opts.maxTokens ?? 4096,
-    system: opts.system,
+    system: opts.system as Anthropic.Messages.MessageCreateParams["system"],
     messages,
   });
 
@@ -93,8 +93,6 @@ export async function callClaudeWithWebSearch(
   messages: Anthropic.MessageParam[],
   opts: { maxTokens?: number; system?: string } = {}
 ): Promise<{ text: string; webCitations: WebCitation[] }> {
-  await checkDailyCap(userId);
-
   const { client, source } = await getClient(userId);
   const response = await client.messages.create({
     model,
@@ -133,8 +131,6 @@ export async function streamClaudeWithWebSearch(
   messages: Anthropic.MessageParam[],
   opts: { maxTokens?: number; system?: string; onText?: (delta: string) => void } = {}
 ): Promise<{ text: string; webCitations: WebCitation[] }> {
-  await checkDailyCap(userId);
-
   const { client, source } = await getClient(userId);
   const stream = client.messages.stream({
     model,

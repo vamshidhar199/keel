@@ -33,9 +33,23 @@ export const runners: Record<string, Runner> = {
       [p.userId, p.limit ?? 20]
     );
     console.log(`[queue] extract_emails user=${p.userId} count=${rows.length}`);
-    for (const { id } of rows) {
-      const result = await processRawEvent(p.userId, id);
-      console.log(`[queue] event=${id} status=${result.status} pages=${result.pagesWritten.length}${result.error ? ` error=${result.error.slice(0, 200)}` : ""}`);
+
+    // Process in chunks of 2 concurrent events. With P1's ~6K tokens per
+    // event, 2 in flight = ~12K burst — safe even at Tier 1 (30K Sonnet,
+    // 50K Haiku ITPM). processRawEvent throws on rate-limit so Promise.all
+    // fails fast → drain.ts retries the job with backoff while events stay
+    // pending. Don't raise concurrency without adaptive throttling.
+    const CONCURRENCY = 2;
+    for (let i = 0; i < rows.length; i += CONCURRENCY) {
+      const chunk = rows.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        chunk.map(async ({ id }) => {
+          const result = await processRawEvent(p.userId, id);
+          console.log(
+            `[queue] event=${id} status=${result.status} pages=${result.pagesWritten.length}${result.error ? ` error=${result.error.slice(0, 200)}` : ""}`
+          );
+        })
+      );
     }
   },
 

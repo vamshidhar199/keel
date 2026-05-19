@@ -17,21 +17,6 @@ async function getClient(userId: string): Promise<ResolvedClient> {
 export const EMBEDDING_MODEL = "text-embedding-3-large";
 export const EMBEDDING_DIMS = 1536;
 
-const DAILY_SOFT_CAP_USD = 5.0;
-
-async function checkDailyCap(userId: string): Promise<void> {
-  const db = getMetaDb();
-  const { rows } = await db.query(
-    `SELECT COALESCE(SUM(cost_usd), 0) AS total
-     FROM llm_costs
-     WHERE user_id = $1 AND called_at >= NOW() - INTERVAL '24 hours'`,
-    [userId]
-  );
-  if (parseFloat(rows[0].total) >= DAILY_SOFT_CAP_USD) {
-    throw new Error(`Daily LLM spend cap reached for user ${userId}`);
-  }
-}
-
 async function logCost(
   userId: string,
   inputTokens: number,
@@ -47,10 +32,8 @@ async function logCost(
   );
 }
 
-// Generate an embedding vector for the given text. Cost is logged + capped.
+// Generate an embedding vector for the given text. Cost is logged.
 export async function embedText(userId: string, text: string): Promise<number[]> {
-  await checkDailyCap(userId);
-
   const { client, source } = await getClient(userId);
   const response = await client.embeddings.create({
     model: EMBEDDING_MODEL,

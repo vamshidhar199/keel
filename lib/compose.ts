@@ -38,6 +38,82 @@ export function parseFrontmatter(content: string): {
   };
 }
 
+// Pick only the known entities likely to be referenced by THIS event, so
+// composePage doesn't ship the entire ~500-page wikilink dictionary on
+// every call. Today's cost driver: a KB with 500 pages = ~10K input tokens
+// of `knownEntities` list on every single compose call. After filtering,
+// ~5-20 entities = ~500 tokens. No quality loss because the model only
+// uses entries that actually appear in the prose anyway.
+//
+// Matching rules:
+//   - Always a case-insensitive substring match on the full title.
+//   - For type='person', also match individual name tokens (>= 3 chars) so
+//     "John Smith" matches when the email just says "John". For other types
+//     we only match the full title — partial matches like "Corp" or "Project"
+//     are too noisy and would pull in irrelevant entries.
+//   - Caps the result at 60 entries as a safety net. If somehow more match,
+//     we keep the first-seen subset; the dictionary's job is help with the
+//     common case, not be exhaustive.
+const MAX_FILTERED_ENTITIES = 60;
+export function filterRelevantEntities(
+  known: KnownEntity[],
+  haystack: string
+): KnownEntity[] {
+  if (known.length === 0) return [];
+  const hay = haystack.toLowerCase();
+  const out: KnownEntity[] = [];
+  for (const e of known) {
+    if (matchesHaystack(e, hay)) {
+      out.push(e);
+      if (out.length >= MAX_FILTERED_ENTITIES) break;
+    }
+  }
+  return out;
+}
+
+function matchesHaystack(e: KnownEntity, hay: string): boolean {
+  const title = e.title.toLowerCase().trim();
+  if (title && hay.includes(title)) return true;
+  if (e.type !== "person") return false;
+  // For people, also try first/last name so first-name-only references match.
+  for (const tok of title.split(/\s+/)) {
+    if (tok.length >= 3 && hay.includes(tok)) return true;
+  }
+  return false;
+}
+
+// Cap existing page content sent to the LLM. Some pages get updated dozens
+// of times and grow past 10K chars; sending the full body on every compose
+// call multiplies token cost linearly with page age.
+//
+// Strategy: preserve the frontmatter intact (the model has to re-emit valid
+// frontmatter with all attributes), then keep the FIRST 1K chars of body
+// (preserves the page's stated identity / opening summary) and the LAST 2K
+// chars (most recent context). Drop the middle with a marker.
+//
+// Tradeoff: when the body is truncated, the model will rewrite from what it
+// sees — so middle history can be lost on the next composition. Acceptable
+// for the small number of pages that hit this threshold; the alternative is
+// runaway token cost. A future P3 "page consolidation" pass would rewrite
+// long bodies into a denser form on a cadence, eliminating the tradeoff.
+const TRUNCATE_THRESHOLD = 6000;
+const TRUNCATE_HEAD = 1000;
+const TRUNCATE_TAIL = 2000;
+export function truncateExistingContent(content: string | null): string | null {
+  if (!content || content.length <= TRUNCATE_THRESHOLD) return content;
+
+  const fmMatch = content.match(/^---\n[\s\S]*?\n---\n?/);
+  const fm = fmMatch ? fmMatch[0] : "";
+  const body = content.slice(fm.length);
+
+  if (body.length <= TRUNCATE_HEAD + TRUNCATE_TAIL) return content;
+
+  const head = body.slice(0, TRUNCATE_HEAD).trimEnd();
+  const tail = body.slice(-TRUNCATE_TAIL).trimStart();
+  const dropped = body.length - TRUNCATE_HEAD - TRUNCATE_TAIL;
+  return `${fm}${head}\n\n[... ${dropped} chars of older content omitted for context size; preserve only what's shown above and below ...]\n\n${tail}`;
+}
+
 // Fetch all pages currently in the user's knowledge base.
 export async function getKnownEntities(userId: string): Promise<KnownEntity[]> {
   try {
@@ -116,8 +192,9 @@ A gbrain page is a markdown file with YAML frontmatter followed by a body. Rules
 export async function composePage(
   userId: string,
   entity: ExtractedEntity & { resolvedSlug: string },
-  emailContext: {
+  eventContext: {
     eventId: string;
+    source: string;
     subject: string;
     fromAddr: string;
     dateSent: string | null;
@@ -130,15 +207,17 @@ export async function composePage(
       ? knownEntities.map((e) => `- ${e.slug} → ${e.title}`).join("\n")
       : "(none yet)";
 
+  const cappedExisting = truncateExistingContent(existingContent);
+
   const userContent = [
     `Entity: ${entity.name} (type: ${entity.type}, slug: ${entity.resolvedSlug})`,
     ``,
-    `Email context:`,
-    `  From: ${emailContext.fromAddr}`,
-    `  Date: ${emailContext.dateSent ?? "unknown"}`,
-    `  Subject: ${emailContext.subject}`,
+    `Source event (${eventContext.source}):`,
+    `  From: ${eventContext.fromAddr}`,
+    `  Date: ${eventContext.dateSent ?? "unknown"}`,
+    `  Subject: ${eventContext.subject}`,
     ``,
-    `Claims extracted from this email:`,
+    `Claims extracted from this event:`,
     entity.claims.map((c) => `  - ${c}`).join("\n"),
     ``,
     `Attributes: ${JSON.stringify(entity.attributes)}`,
@@ -146,8 +225,8 @@ export async function composePage(
     `Known entities (use [[slug]] when referencing these in body prose):`,
     entityList,
     ``,
-    existingContent
-      ? `Existing page content (update this, don't replace):\n${existingContent}`
+    cappedExisting
+      ? `Existing page content (update this, don't replace):\n${cappedExisting}`
       : `This is a NEW page — compose from scratch.`,
   ].join("\n");
 
@@ -156,7 +235,12 @@ export async function composePage(
     maxTokens: 2048,
   });
 
-  const withEvidence = injectEvidence(markdown, emailContext.eventId, emailContext.dateSent);
+  const withEvidence = injectEvidence(
+    markdown,
+    eventContext.eventId,
+    eventContext.source,
+    eventContext.dateSent
+  );
 
   return { slug: entity.resolvedSlug, content: withEvidence };
 }
@@ -166,7 +250,12 @@ export async function composePage(
 // LLM emitted (multi-line YAML list, missing entirely, prose) is wiped and
 // replaced. This guarantees event_ids are preserved so page_sources backfills
 // and engagement detection always have something to work with.
-function injectEvidence(markdown: string, eventId: string, dateSent: string | null): string {
+function injectEvidence(
+  markdown: string,
+  eventId: string,
+  source: string,
+  dateSent: string | null
+): string {
   const fmMatch = markdown.match(/^---\n([\s\S]*?)\n---/);
   if (!fmMatch) return markdown;
 
@@ -182,7 +271,7 @@ function injectEvidence(markdown: string, eventId: string, dateSent: string | nu
     if (e.event_id) byEventId.set(e.event_id, e);
   }
   if (!byEventId.has(eventId)) {
-    byEventId.set(eventId, { event_id: eventId, source: "gmail", date: dateSent });
+    byEventId.set(eventId, { event_id: eventId, source, date: dateSent });
   }
 
   // Strip ALL existing `evidence:` blocks (inline or list form) before

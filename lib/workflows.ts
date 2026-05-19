@@ -2,6 +2,18 @@ import { getAdminDb, getMetaDb, withUser } from "./db";
 import { decrypt } from "./crypto";
 import { callClaude, HAIKU, SONNET } from "./anthropic";
 import { loadUserContext, buildMemoriesBlock, summarizeRecentDownvotes } from "./digest";
+import {
+  LOOKBACK_HOURS_CHOICES,
+  describeLookback,
+  isLookbackHours,
+  type LookbackHours,
+} from "./workflow-shared";
+
+// Re-export for callers that have always imported these from "@/lib/workflows".
+// Client components should import directly from "@/lib/workflow-shared" instead
+// — pulling them through this module drags in pg / Node-only deps.
+export { LOOKBACK_HOURS_CHOICES, describeLookback, isLookbackHours };
+export type { LookbackHours };
 
 // ── Cron presets ─────────────────────────────────────────────────────────────
 //
@@ -181,6 +193,7 @@ export interface Workflow {
   trigger_custom: WorkflowCustomTrigger | null;
   filter_nl: string;
   prompt_template: string;
+  lookback_hours: number;
   delivery_type: "in_app";
   enabled: boolean;
   last_run_at: string | null;
@@ -198,6 +211,7 @@ interface WorkflowRow {
   trigger_custom: WorkflowCustomTrigger | null;
   filter_nl: string;
   prompt_template: string;
+  lookback_hours: number;
   delivery_type: string;
   enabled: boolean;
   last_run_at: Date | null;
@@ -216,6 +230,7 @@ function toWorkflow(r: WorkflowRow): Workflow {
     trigger_custom: r.trigger_custom,
     filter_nl: r.filter_nl,
     prompt_template: r.prompt_template,
+    lookback_hours: r.lookback_hours,
     delivery_type: r.delivery_type as "in_app",
     enabled: r.enabled,
     last_run_at: r.last_run_at?.toISOString() ?? null,
@@ -226,7 +241,7 @@ function toWorkflow(r: WorkflowRow): Workflow {
 }
 
 const WORKFLOW_COLUMNS = `id, user_id, name, description, trigger_cron, trigger_custom,
-              filter_nl, prompt_template, delivery_type, enabled,
+              filter_nl, prompt_template, lookback_hours, delivery_type, enabled,
               last_run_at, next_run_at, created_at, updated_at`;
 
 export async function listWorkflows(userId: string): Promise<Workflow[]> {
@@ -261,6 +276,7 @@ export interface CreateWorkflowInput {
   trigger_custom?: WorkflowCustomTrigger | null;
   filter_nl?: string;
   prompt_template: string;
+  lookback_hours?: LookbackHours;
 }
 
 export async function createWorkflow(
@@ -281,8 +297,8 @@ export async function createWorkflow(
     const { rows } = await c.query<WorkflowRow>(
       `INSERT INTO workflows
          (user_id, name, description, trigger_cron, trigger_custom,
-          filter_nl, prompt_template, delivery_type, enabled, next_run_at)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, 'in_app', true, $8)
+          filter_nl, prompt_template, lookback_hours, delivery_type, enabled, next_run_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, 'in_app', true, $9)
        RETURNING ${WORKFLOW_COLUMNS}`,
       [
         userId,
@@ -292,6 +308,7 @@ export async function createWorkflow(
         customJson,
         (input.filter_nl ?? "").slice(0, 600),
         input.prompt_template.slice(0, 2000),
+        input.lookback_hours ?? 24,
         nextRun,
       ]
     );
@@ -306,6 +323,7 @@ export interface UpdateWorkflowInput {
   trigger_custom?: WorkflowCustomTrigger | null;
   filter_nl?: string;
   prompt_template?: string;
+  lookback_hours?: LookbackHours;
   enabled?: boolean;
 }
 
@@ -349,6 +367,7 @@ export async function updateWorkflow(
            END,
          filter_nl       = COALESCE($4, filter_nl),
          prompt_template = COALESCE($5, prompt_template),
+         lookback_hours  = COALESCE($10, lookback_hours),
          enabled         = COALESCE($6, enabled),
          next_run_at     = COALESCE($7, next_run_at),
          updated_at      = now()
@@ -368,6 +387,7 @@ export async function updateWorkflow(
           : customJsonForUpdate === null
           ? "__null__"
           : customJsonForUpdate,
+        input.lookback_hours ?? null,
       ]
     );
     return rows[0] ? toWorkflow(rows[0]) : null;
@@ -513,7 +533,16 @@ interface RunCandidate {
 
 // Pull ~40 items the workflow filter can consider: recent Gmail (decrypted),
 // recently-touched pages, and open commitments. Bounded to keep tokens sane.
-async function workflowCandidates(userId: string): Promise<RunCandidate[]> {
+//
+// `lookbackHours` scopes the email + page candidates to a workflow-specific
+// window so a "daily" workflow (24h) doesn't see weeks-old mail just because
+// the inbox was quiet. Commitments are intentionally NOT windowed — an open
+// commitment from last month is still actionable today.
+async function workflowCandidates(
+  userId: string,
+  lookbackHours: number
+): Promise<RunCandidate[]> {
+  const hours = Math.max(1, Math.min(lookbackHours, 24 * 90)); // clamp to [1h, 90d]
   const db = getMetaDb();
   const [emails, pages, commitments] = await Promise.all([
     db.query<{
@@ -526,18 +555,19 @@ async function workflowCandidates(userId: string): Promise<RunCandidate[]> {
       `SELECT thread_ref, from_addr, subject, body_text, date_sent
          FROM raw_events
         WHERE user_id = $1 AND source = 'gmail'
-          AND date_sent > now() - INTERVAL '14 days'
+          AND date_sent > now() - ($2 || ' hours')::interval
         ORDER BY date_sent DESC
         LIMIT 25`,
-      [userId]
+      [userId, hours]
     ),
     withUser(userId, (c) =>
       c.query<{ slug: string; title: string; type: string | null; updated_at: Date; compiled_truth: string }>(
         `SELECT slug, title, type, updated_at, compiled_truth
            FROM pages
-          WHERE updated_at > now() - INTERVAL '14 days'
+          WHERE updated_at > now() - ($1 || ' hours')::interval
           ORDER BY updated_at DESC
-          LIMIT 10`
+          LIMIT 10`,
+        [hours]
       )
     ),
     withUser(userId, (c) =>
@@ -635,7 +665,7 @@ export async function runWorkflow(
   const downvotes = await summarizeRecentDownvotes(userId);
   const memoriesBlock = buildMemoriesBlock(ctx.ai_memories, downvotes, 0);
 
-  const candidates = await workflowCandidates(userId);
+  const candidates = await workflowCandidates(userId, wf.lookback_hours);
   const result: WorkflowRunResult = await (async () => {
     try {
       if (candidates.length === 0) {
@@ -679,7 +709,17 @@ Return ONLY the JSON array.`;
         (memoriesBlock ? `\n\n${memoriesBlock}` : "") +
         "\n\nWrite a concise response in Markdown. Cite items with [ref] tags inline (e.g. [thread-abc] or [page-slug]) so the user can trace them.";
 
-      const synthUser = `<context>
+      // Anchor the model with the current date and the workflow's lookback
+      // window so it can self-filter stale items. Without this, a "daily"
+      // workflow that runs after a quiet night would still surface anything
+      // the candidate query returned, regardless of age.
+      const today = new Date().toISOString().slice(0, 10);
+      const windowDesc = describeLookback(wf.lookback_hours);
+
+      const synthUser = `Today's date: ${today}
+Lookback window: ${windowDesc} (items older than this are stale and should not be treated as "new" or "overnight" unless the user's instructions explicitly ask for older history).
+
+<context>
 ${kept.map((c) => `[${c.ref}] ${c.kind}: ${c.details}`).join("\n\n")}
 </context>
 
@@ -748,6 +788,7 @@ export interface WorkflowTemplate {
   trigger_cron: CronPresetKey;
   filter_nl: string;
   prompt_template: string;
+  lookback_hours: LookbackHours;
 }
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
@@ -759,6 +800,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     filter_nl: "all gmail threads from the last 24 hours that need my attention",
     prompt_template:
       "Summarize the user's overnight email in 2-3 paragraphs. Lead with what needs a reply today; then mention notable but non-urgent items. Be specific about senders and subjects. Skip newsletters and automated notifications.",
+    lookback_hours: 24,
   },
   {
     key: "weekly_recap",
@@ -768,6 +810,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     filter_nl: "anything that shifted on a project or person this week — decisions, blockers, status changes",
     prompt_template:
       "Write a 3-section Friday recap: (1) What shipped or got decided, (2) What's still in flight, (3) What might slip into next week. Be specific. Quote one direct phrase or excerpt per item where it would help the user remember.",
+    lookback_hours: 168,
   },
   {
     key: "sunday_prep",
@@ -777,6 +820,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     filter_nl: "open commitments + anyone who's waiting on my reply + any threads with action items pending",
     prompt_template:
       "Write a Sunday-evening 'prep me for the week' note. Lead with the 3 most important things on the user's plate. Then list anyone who's waiting on them. Tone: warm, direct, no hand-wringing.",
+    lookback_hours: 168,
   },
   {
     key: "quiet_relationships",
@@ -786,6 +830,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     filter_nl: "people pages where the underlying threads have gone quiet but used to be active",
     prompt_template:
       "List up to 5 people the user used to talk to but hasn't recently. For each, write one line: their name + the last subject/thread + how long ago. End with one suggestion of who to reach out to first and why.",
+    lookback_hours: 720,
   },
 ];
 
@@ -799,6 +844,23 @@ export interface WorkflowDraft {
   trigger_cron: CronPresetKey;
   filter_nl: string;
   prompt_template: string;
+  lookback_hours: LookbackHours;
+}
+
+// Pick a sane default lookback when the model didn't (or returned an invalid
+// value). Roughly: daily/weekday cadences → 24h, weekly → 168h, monthly-ish
+// trigger (only sunday_6pm fits) → 168h. Override per-template in WORKFLOW_TEMPLATES.
+function defaultLookbackForCron(cron: CronPresetKey): LookbackHours {
+  switch (cron) {
+    case "daily_8am":
+    case "weekday_8am":
+    case "weekday_6pm":
+      return 24;
+    case "monday_8am":
+    case "friday_4pm":
+    case "sunday_6pm":
+      return 168;
+  }
 }
 
 // Parse a JSON object out of arbitrary LLM text, then validate it against the
@@ -823,12 +885,17 @@ export function parseWorkflowDraft(text: string): WorkflowDraft | null {
 
   if (!name || !triggerCron || !promptTemplate) return null;
 
+  const lookbackHours = isLookbackHours(obj.lookback_hours)
+    ? obj.lookback_hours
+    : defaultLookbackForCron(triggerCron);
+
   return {
     name,
     description,
     trigger_cron: triggerCron,
     filter_nl: filterNl,
     prompt_template: promptTemplate,
+    lookback_hours: lookbackHours,
   };
 }
 
@@ -868,12 +935,14 @@ Return STRICT JSON ONLY (no prose, no markdown fences) with this shape:
   "description": string,        // <= 160 chars, one sentence
   "trigger_cron": string,       // one of the keys above
   "filter_nl": string,          // 1-2 sentences describing what data to look at; empty string if no filter
-  "prompt_template": string     // 2-5 sentences telling the AI what to write each run
+  "prompt_template": string,    // 2-5 sentences telling the AI what to write each run
+  "lookback_hours": number      // one of: 12, 24, 48, 72, 168, 336, 720
 }
 
 Guidance:
 - The prompt_template is a SYSTEM prompt that the AI follows when the workflow fires. Write it in second person ("Write a 3-paragraph recap...").
 - The filter_nl narrows the candidates BEFORE the prompt runs. Use it for things like "only emails about Acme" or "people I haven't talked to in 2 weeks." Leave empty for general digests.
+- lookback_hours sets how far back the runner pulls emails + pages. Match it to the cadence and the prompt: daily / "overnight" → 24, every-2-days → 48, weekly recap → 168, monthly digest → 720. If the prompt says "this week," use 168 regardless of trigger.
 - Never invent cadences. If the user says "every Tuesday" or "monthly," pick the closest preset and note the approximation in the description.`;
 
 // Generates a draft workflow from a free-text user request. Does NOT persist.

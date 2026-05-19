@@ -388,6 +388,13 @@ ALTER TABLE user_preferences
 ALTER TABLE workflows
   ADD COLUMN IF NOT EXISTS trigger_custom JSONB;
 
+-- How far back (in hours) the workflow runner should look when pulling
+-- candidates. Default 24h matches the most common "what happened overnight"
+-- use case. Override per-workflow for weekly recaps (168) or monthly
+-- digests. Honored by workflowCandidates() in lib/workflows.ts.
+ALTER TABLE workflows
+  ADD COLUMN IF NOT EXISTS lookback_hours INTEGER NOT NULL DEFAULT 24;
+
 -- Tag every llm_costs row with which key paid for the call: 'user' = the
 -- user's own API key (no cost exposure to us), 'shared' = our env-var
 -- fallback. Lets us audit shared-key spend and circuit-break on a global

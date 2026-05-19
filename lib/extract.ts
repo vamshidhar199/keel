@@ -1,4 +1,4 @@
-import { callClaude, HAIKU } from "./anthropic";
+import { callClaude, HAIKU, type SystemPrompt } from "./anthropic";
 import type { KnownEntity } from "./compose";
 
 export type EntityType = "person" | "company" | "project" | "topic";
@@ -53,10 +53,29 @@ Rules:
 
 Return only valid JSON. No markdown fences, no commentary.`;
 
-function buildSystemPrompt(knownEntities: KnownEntity[]): string {
-  if (knownEntities.length === 0) return BASE_SYSTEM_PROMPT;
-  const list = knownEntities.map((e) => `  - ${e.slug} → ${e.title} (${e.type})`).join("\n");
-  return `${BASE_SYSTEM_PROMPT}\n\nKnown entities — use these slugs exactly if an entity matches:\n${list}`;
+// Build the system prompt as a structured array so we can cache the large
+// static prefix (BASE_SYSTEM_PROMPT, ~3K tokens, identical on every call)
+// separately from the dynamic known-entities suffix that changes per user.
+// During a sync burst, the static block is cached after the first call and
+// every subsequent call within ~5 min skips it from ITPM accounting.
+function buildSystemPrompt(knownEntities: KnownEntity[]): SystemPrompt {
+  const blocks: SystemPrompt = [
+    {
+      type: "text",
+      text: BASE_SYSTEM_PROMPT,
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+  if (knownEntities.length > 0) {
+    const list = knownEntities
+      .map((e) => `  - ${e.slug} → ${e.title} (${e.type})`)
+      .join("\n");
+    blocks.push({
+      type: "text",
+      text: `\n\nKnown entities — use these slugs exactly if an entity matches:\n${list}`,
+    });
+  }
+  return blocks;
 }
 
 export async function extractEmail(

@@ -7,7 +7,9 @@ import {
   deleteWorkflow,
   isCronPresetKey,
   isValidCustomTrigger,
+  isLookbackHours,
   type WorkflowCustomTrigger,
+  type LookbackHours,
 } from "@/lib/workflows";
 
 export async function GET(
@@ -75,6 +77,17 @@ export async function PATCH(
     }
   }
 
+  let lookbackHoursInput: LookbackHours | undefined;
+  if (body.lookback_hours !== undefined) {
+    if (!isLookbackHours(body.lookback_hours)) {
+      return NextResponse.json(
+        { error: "lookback_hours must be one of: 12, 24, 48, 72, 168, 336, 720" },
+        { status: 400 }
+      );
+    }
+    lookbackHoursInput = body.lookback_hours;
+  }
+
   const db = getMetaDb();
   const { rows } = await db.query<{ timezone: string }>(
     `SELECT timezone FROM users WHERE id = $1`,
@@ -93,6 +106,7 @@ export async function PATCH(
       filter_nl: typeof body.filter_nl === "string" ? body.filter_nl : undefined,
       prompt_template:
         typeof body.prompt_template === "string" ? body.prompt_template.trim() : undefined,
+      lookback_hours: lookbackHoursInput,
       enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
     },
     timezone

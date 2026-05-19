@@ -9,6 +9,11 @@ import type {
   CronPreset,
   WorkflowCustomTrigger,
 } from "@/lib/workflows";
+import {
+  LOOKBACK_HOURS_CHOICES,
+  describeLookback,
+  type LookbackHours,
+} from "@/lib/workflow-shared";
 
 interface Props {
   initialWorkflow: Workflow;
@@ -31,12 +36,14 @@ export function WorkflowDetail({
     trigger_custom: WorkflowCustomTrigger | null;
     filter_nl: string;
     prompt_template: string;
+    lookback_hours: LookbackHours;
   }>({
     name: workflow.name,
     trigger_cron: workflow.trigger_cron,
     trigger_custom: workflow.trigger_custom,
     filter_nl: workflow.filter_nl,
     prompt_template: workflow.prompt_template,
+    lookback_hours: workflow.lookback_hours as LookbackHours,
   });
   const [dirty, setDirty] = useState(false);
   const [running, setRunning] = useState(false);
@@ -93,6 +100,7 @@ export function WorkflowDetail({
       trigger_custom: workflow.trigger_custom,
       filter_nl: workflow.filter_nl,
       prompt_template: workflow.prompt_template,
+      lookback_hours: workflow.lookback_hours as LookbackHours,
     });
     setDirty(false);
   }, [workflow]);
@@ -120,6 +128,7 @@ export function WorkflowDetail({
             label="Next run"
             value={new Date(workflow.next_run_at).toLocaleString()}
           />
+          <Stat label="Lookback" value={describeLookback(workflow.lookback_hours)} />
         </div>
         <div className="flex items-center justify-end gap-2 pt-2">
           <button
@@ -163,6 +172,29 @@ export function WorkflowDetail({
         />
         <div>
           <p className="text-[11px] mb-1.5" style={{ color: "var(--c-subtle)" }}>
+            How far back to look each run
+          </p>
+          <select
+            value={draft.lookback_hours}
+            onChange={(e) => {
+              setDraft((d) => ({
+                ...d,
+                lookback_hours: Number(e.target.value) as LookbackHours,
+              }));
+              setDirty(true);
+            }}
+            className="w-full rounded-lg px-3 py-2 text-[13px] glass-card"
+            style={{ color: "var(--c-fg)", background: "var(--c-card)" }}
+          >
+            {LOOKBACK_HOURS_CHOICES.map((h) => (
+              <option key={h} value={h}>
+                {describeLookback(h)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <p className="text-[11px] mb-1.5" style={{ color: "var(--c-subtle)" }}>
             Filter (optional)
           </p>
           <textarea
@@ -202,6 +234,7 @@ export function WorkflowDetail({
                   trigger_custom: workflow.trigger_custom,
                   filter_nl: workflow.filter_nl,
                   prompt_template: workflow.prompt_template,
+                  lookback_hours: workflow.lookback_hours as LookbackHours,
                 });
                 setDirty(false);
               }}
