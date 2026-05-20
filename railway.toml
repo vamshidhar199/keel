@@ -8,6 +8,17 @@ healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
+# Drains the job queue every minute. RAILWAY_PUBLIC_DOMAIN has no scheme —
+# the https:// prefix is required, or curl defaults to http:// and Railway's
+# edge 301-redirects it, dropping the POST (curl doesn't follow without -L).
 [[deploy.cronJobs]]
 schedule = "* * * * *"
-command = "curl -X POST -fsS -H \"X-Queue-Secret: $QUEUE_SECRET\" $RAILWAY_PUBLIC_DOMAIN/api/queue/drain || true"
+command = "curl -X POST -fsS -H \"X-Queue-Secret: $QUEUE_SECRET\" https://$RAILWAY_PUBLIC_DOMAIN/api/queue/drain || true"
+
+# Scheduler tick every 30 min: enqueues due Gmail/Slack syncs, daily digests,
+# and Tier-3 workflow runs, and purges stale briefings. Without this entry
+# none of that fires in prod — schedulerTick was orphaned (route existed,
+# no cron called it).
+[[deploy.cronJobs]]
+schedule = "*/30 * * * *"
+command = "curl -X POST -fsS -H \"X-Cron-Secret: $CRON_SECRET\" https://$RAILWAY_PUBLIC_DOMAIN/api/cron/scheduler-tick || true"

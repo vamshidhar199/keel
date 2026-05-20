@@ -164,7 +164,12 @@ export function AskClient({ opener, suggestions, skills }: AskClientProps) {
           }
 
           if (typeof event.error === "string") {
+            // Terminal: server hit an error mid-stream. Clear the streaming
+            // spinner and drop the optimistic user message — otherwise the
+            // "searching…" indicator hangs forever with the error invisible.
             setError(event.error);
+            setMessages((prev) => prev.slice(0, -1));
+            setStreaming(null);
             continue;
           }
           if (typeof event.phase === "string") {
