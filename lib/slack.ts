@@ -1,4 +1,5 @@
 import { getMetaDb } from "./db";
+import { encrypt, decrypt } from "./crypto";
 
 // ── Token storage ──────────────────────────────────────────────────────────
 
@@ -14,7 +15,8 @@ async function getSlackAccount(userId: string): Promise<SlackAccount | null> {
      FROM accounts WHERE "userId" = $1 AND provider = 'slack'`,
     [userId]
   );
-  return rows[0] ?? null;
+  if (!rows[0]) return null;
+  return { access_token: decrypt(rows[0].access_token), team_id: rows[0].team_id };
 }
 
 export async function hasSlackConnected(userId: string): Promise<boolean> {
@@ -33,7 +35,7 @@ export async function saveSlackTokens(
      VALUES ($1, 'oauth', 'slack', $2, $3, $4, 'user', $5)
      ON CONFLICT (provider, "providerAccountId")
      DO UPDATE SET access_token = EXCLUDED.access_token, scope = EXCLUDED.scope`,
-    [userId, authedUser.id, authedUser.access_token, authedUser.scope, teamId]
+    [userId, authedUser.id, encrypt(authedUser.access_token), authedUser.scope, teamId]
   );
 }
 

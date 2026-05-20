@@ -78,36 +78,29 @@ else
   fi
 fi
 
-# ── 3. Install gbrain CLI ─────────────────────────────────────────────────────
+# ── 3. Create mettrie_app role (non-superuser, NOBYPASSRLS) ───────────────────
 
-step "Setting up gbrain CLI"
+step "Setting up mettrie_app database role"
 
-GBRAIN_DIR="$HOME/gbrain"
-
-if [ -f "$HOME/.bun/bin/gbrain" ]; then
-  ok "gbrain already linked"
-else
-  if [ ! -d "$GBRAIN_DIR" ]; then
-    warn "gbrain not found at $GBRAIN_DIR. Cloning..."
-    git clone https://github.com/garrytan/gbrain.git "$GBRAIN_DIR"
-    ok "gbrain cloned"
-  fi
-
-  cd "$GBRAIN_DIR"
-  bun install
-  bun link
-  cd - > /dev/null
-  ok "gbrain installed and linked"
-fi
+docker exec mettrie-postgres psql -U mettrie -d mettrie_meta -c "
+DO \$\$
+BEGIN
+  CREATE ROLE mettrie_app LOGIN PASSWORD 'mettrie_app_dev' NOBYPASSRLS;
+EXCEPTION WHEN duplicate_object THEN
+  -- role already exists
+END \$\$;
+GRANT CONNECT ON DATABASE mettrie_meta TO mettrie_app;
+GRANT USAGE ON SCHEMA public TO mettrie_app;
+" 2>/dev/null && ok "mettrie_app role ready" || warn "Could not create mettrie_app role — run migrations first to create tables, then re-run setup.sh"
 
 # ── 4. Install app dependencies ───────────────────────────────────────────────
 
 step "Installing app dependencies"
 
-APP_DIR="$(dirname "$0")/app"
+APP_DIR="$(dirname "$0")"
 
-if [ ! -d "$APP_DIR" ]; then
-  fail "Could not find app/ directory. Run this script from the repo root."
+if [ ! -f "$APP_DIR/package.json" ]; then
+  fail "Could not find package.json next to setup.sh. Run this script from the repo root."
 fi
 
 cd "$APP_DIR"
@@ -123,14 +116,6 @@ if [ -f ".env.local" ]; then
   warn "Make sure all values are filled in (especially API keys and OAuth credentials)"
 else
   cp .env.example .env.local
-
-  # Auto-fill BUN_BIN
-  BUN_BIN_PATH="$HOME/.bun/bin"
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s|BUN_BIN=.*|BUN_BIN=$BUN_BIN_PATH|" .env.local
-  else
-    sed -i "s|BUN_BIN=.*|BUN_BIN=$BUN_BIN_PATH|" .env.local
-  fi
 
   # Auto-generate AUTH_SECRET
   AUTH_SECRET_VAL=$(openssl rand -base64 32)
@@ -157,7 +142,7 @@ echo -e "${BOLD}─────────────────────�
 echo -e "${GREEN}${BOLD}Setup complete!${NC}"
 echo ""
 echo "Next steps:"
-echo "  1. Fill in the API keys in app/.env.local (get values from your team lead)"
+echo "  1. Fill in the API keys in .env.local (get values from your team lead)"
 echo ""
 echo "  2. Google OAuth — add the redirect URI in Google Cloud Console:"
 echo "       http://localhost:3002/api/auth/callback/google"
@@ -168,8 +153,8 @@ echo "  3. Slack OAuth — get SLACK_CLIENT_ID + SLACK_CLIENT_SECRET from your t
 echo "     The Slack app is shared. You connect your own Slack account from the Sources page."
 echo ""
 echo "  4. Start the dev server:"
-echo "       cd app && bun run dev -- --port 3002"
+echo "       bun run dev -- --port 3002"
 echo ""
 echo "  5. Open http://localhost:3002"
 echo ""
-echo "See app/README.md for full instructions and troubleshooting."
+echo "See README.md for full instructions and troubleshooting."

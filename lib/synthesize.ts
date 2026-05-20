@@ -1,9 +1,9 @@
-import { callClaudeWithWebSearch, SONNET } from "./anthropic";
+import { callClaudeWithWebSearch, streamClaudeWithWebSearch, SONNET } from "./anthropic";
 import type { BrainSearchHit } from "./gbrain";
 
 export interface SynthesizedAnswer {
   answer: string;
-  citations: { chunk_id: number; slug: string; title: string }[];
+  citations: { chunk_id: string; slug: string; title: string }[];
   webCitations: { id: number; title: string; url: string }[];
   invalidCitations: number[];
 }
@@ -17,12 +17,18 @@ You also have access to web search. Use it to supplement with general or public 
 Rules:
 - Prefer personal knowledge base for anything about the user's own work, relationships, or history.
 - Use web search for general company info, public facts, or context the personal sources don't cover.
-- Be specific and concise. No filler phrases.`;
+- Be specific and concise. No filler phrases.
+
+IMPORTANT — how to read job-listing context:
+- If a source chunk comes from a page with slug starting "projects/" and a title that reads like a job role (e.g. "Senior Software Engineer at Acme"), the user is most likely *exploring an opportunity*, not currently working there. Same for company pages tied to those roles.
+- NEVER claim the user works/worked at a company solely because that company appears in their knowledge base. Look for explicit signals (employment dates, "I work at", payslips, internal communications).
+- If asked about employment ("how long did I work at X", "what projects did I lead at X") and the only matches are job-application chunks, say so directly: "The chunks only reference X in the context of an application/opportunity, not as an employer."`;
 
 function formatSources(hits: BrainSearchHit[]): string {
   if (hits.length === 0) return "(no personal sources found)";
+  // Use 1-based array index as the citation number, not the UUID chunk_id.
   return hits
-    .map((h) => `[chunk:${h.chunk_id}] (${h.slug} — ${h.title})\n${h.chunk_text.trim()}`)
+    .map((h, i) => `[chunk:${i + 1}] (${h.slug} — ${h.title})\n${h.chunk_text.trim()}`)
     .join("\n\n---\n\n");
 }
 
@@ -30,16 +36,16 @@ function validateChunkCitations(
   answer: string,
   hits: BrainSearchHit[]
 ): { cited: Set<number>; invalid: number[] } {
-  const validIds = new Set(hits.map((h) => h.chunk_id));
+  const validIndices = new Set(hits.map((_, i) => i + 1));
   const cited = new Set<number>();
   const invalid: number[] = [];
 
   const re = /\[chunk:(\d+)\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(answer)) !== null) {
-    const id = parseInt(m[1], 10);
-    if (validIds.has(id)) cited.add(id);
-    else if (!invalid.includes(id)) invalid.push(id);
+    const idx = parseInt(m[1], 10);
+    if (validIndices.has(idx)) cited.add(idx);
+    else if (!invalid.includes(idx)) invalid.push(idx);
   }
   return { cited, invalid };
 }
@@ -82,7 +88,61 @@ export async function synthesizeAnswer(
   const { cited, invalid } = validateChunkCitations(answer, hits);
 
   const citations = hits
-    .filter((h) => cited.has(h.chunk_id))
+    .filter((_, i) => cited.has(i + 1))
+    .map((h) => ({ chunk_id: h.chunk_id, slug: h.slug, title: h.title }));
+
+  const webCitations = rawWeb.map((w, i) => ({ id: i + 1, title: w.title, url: w.url }));
+
+  return { answer, citations, webCitations, invalidCitations: invalid };
+}
+
+// Streaming variant — invokes onDelta for each text chunk as it arrives.
+// Returns the same SynthesizedAnswer shape after the model finishes.
+export async function synthesizeAnswerStream(
+  userId: string,
+  question: string,
+  hits: BrainSearchHit[],
+  userName: string | null | undefined,
+  history: { role: "user" | "assistant"; content: string }[] | undefined,
+  onDelta: (delta: string) => void,
+  skillInstructions?: string | null
+): Promise<SynthesizedAnswer> {
+  const today = new Date().toISOString().slice(0, 10);
+  const ownerLine = userName
+    ? `This knowledge base belongs to ${userName}. When the answer refers to ${userName}, use "you" / "your" instead of their name.`
+    : "";
+
+  const skillBlock = skillInstructions && skillInstructions.trim().length > 0
+    ? `<active_skill>\n${skillInstructions.trim()}\n</active_skill>`
+    : "";
+
+  const system = [SYSTEM_PROMPT, ownerLine, skillBlock].filter(Boolean).join("\n\n");
+
+  const currentTurn = [
+    `Today's date: ${today}`,
+    ``,
+    `Question: ${question}`,
+    ``,
+    `Personal Knowledge Base:`,
+    formatSources(hits),
+  ].join("\n");
+
+  const messages = [
+    ...(history ?? []),
+    { role: "user" as const, content: currentTurn },
+  ];
+
+  const { text: answer, webCitations: rawWeb } = await streamClaudeWithWebSearch(
+    userId,
+    SONNET,
+    messages,
+    { system, maxTokens: 1024, onText: onDelta }
+  );
+
+  const { cited, invalid } = validateChunkCitations(answer, hits);
+
+  const citations = hits
+    .filter((_, i) => cited.has(i + 1))
     .map((h) => ({ chunk_id: h.chunk_id, slug: h.slug, title: h.title }));
 
   const webCitations = rawWeb.map((w, i) => ({ id: i + 1, title: w.title, url: w.url }));

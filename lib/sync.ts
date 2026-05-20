@@ -1,4 +1,4 @@
-import { getMetaDb } from "./db";
+import { getAdminDb, getMetaDb } from "./db";
 import { listMessageIds, fetchMessage, extractTextBody } from "./gmail";
 import {
   listConversations,
@@ -6,6 +6,7 @@ import {
   resolveUserNames,
   getTeamName,
 } from "./slack";
+import { encrypt, encryptJson } from "./crypto";
 
 const MAX_INITIAL_PAGES = 3;
 
@@ -17,13 +18,20 @@ export interface SyncResult {
 export async function syncGmail(userId: string): Promise<SyncResult> {
   const db = getMetaDb();
 
-  const cursorRes = await db.query(
-    `SELECT cursor FROM sync_cursors WHERE user_id = $1 AND source = 'gmail'`,
-    [userId]
-  );
+  const [cursorRes, emailRes] = await Promise.all([
+    db.query(
+      `SELECT cursor FROM sync_cursors WHERE user_id = $1 AND source = 'gmail'`,
+      [userId]
+    ),
+    db.query<{ email: string | null }>(
+      `SELECT email FROM users WHERE id = $1`,
+      [userId]
+    ),
+  ]);
   const isInitialSync = cursorRes.rows.length === 0;
   let pageToken: string | undefined = cursorRes.rows[0]?.cursor || undefined;
   const maxPages = isInitialSync ? MAX_INITIAL_PAGES : 1;
+  const userEmail = (emailRes.rows[0]?.email ?? "").toLowerCase();
 
   let newMessages = 0;
   let pagesProcessed = 0;
@@ -48,13 +56,25 @@ export async function syncGmail(userId: string): Promise<SyncResult> {
       const dateHeader =
         headers.find((h) => h.name?.toLowerCase() === "date")?.value;
       const bodyText = extractTextBody(msg.payload);
+      const isFromUser = userEmail.length > 0 && fromAddr.toLowerCase().includes(userEmail);
 
       await db.query(
         `INSERT INTO raw_events
-           (user_id, source, source_ref, subject, from_addr, date_sent, body_text, raw_json)
-         VALUES ($1, 'gmail', $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (user_id, source, source_ref) DO NOTHING`,
-        [userId, id, subject, fromAddr, dateHeader ? new Date(dateHeader) : null, bodyText, msg]
+           (user_id, source, source_ref, subject, from_addr, date_sent, body_text, raw_json, thread_ref, is_from_user)
+         VALUES ($1, 'gmail', $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (user_id, source, source_ref)
+           DO UPDATE SET thread_ref = COALESCE(raw_events.thread_ref, EXCLUDED.thread_ref)`,
+        [
+          userId,
+          id,
+          encrypt(subject),
+          encrypt(fromAddr),
+          dateHeader ? new Date(dateHeader) : null,
+          encrypt(bodyText),
+          encryptJson(msg),
+          msg.threadId ?? null,
+          isFromUser,
+        ]
       );
       newMessages++;
     }
@@ -134,24 +154,77 @@ export async function updateSyncInterval(
 }
 
 // Called by the scheduler every 30 minutes. Enqueues a sync for any user
-// whose sync interval has elapsed since their last sync.
+// whose sync interval has elapsed, and enqueues a daily digest for any user
+// whose chosen local hour matches now.
+//
+// Runs on the admin pool because the digest-existence check joins the
+// RLS-protected `digests` table across users. The app role (mettrie_app)
+// would fail the RLS policy without `app.user_id` set; admin (mettrie) is a
+// superuser and bypasses RLS, which is correct for this cross-tenant scan.
 export async function schedulerTick(): Promise<void> {
-  const db = getMetaDb();
-  const { rows } = await db.query<{ user_id: string; source: string }>(
+  const db = getAdminDb();
+
+  const { cleanupBriefings } = await import("./briefing");
+  const deleted = await cleanupBriefings();
+  if (deleted > 0) console.log(`[scheduler] purged ${deleted} stale user_briefings rows`);
+
+  const { enqueue } = await import("./queue/enqueue");
+
+  // Daily digest enqueue. Unique constraint on digests(user_id, local_date)
+  // makes a second fire in the matching hour a no-op, so cron's 30-min cadence
+  // is safe even though we match on hour granularity.
+  const { rows: digestUsers } = await db.query<{
+    id: string;
+    email: string;
+    timezone: string;
+  }>(
+    `SELECT u.id, u.email, u.timezone
+     FROM users u
+     JOIN user_preferences p ON p.user_id = u.id
+     WHERE p.digest_enabled = true
+       AND u.email IS NOT NULL
+       AND EXTRACT(HOUR FROM (now() AT TIME ZONE u.timezone)) = p.digest_hour_local
+       AND NOT EXISTS (
+         SELECT 1 FROM digests
+         WHERE user_id = u.id
+           AND local_date = (now() AT TIME ZONE u.timezone)::date
+       )`
+  );
+  for (const u of digestUsers) {
+    const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: u.timezone }).format(
+      new Date()
+    );
+    console.log(`[scheduler] enqueueing generate_daily_digest user=${u.id} date=${localDate}`);
+    await enqueue({
+      type: "generate_daily_digest",
+      userId: u.id,
+      userEmail: u.email,
+      localDate,
+    });
+  }
+
+  // Source syncs.
+  const { rows: syncRows } = await db.query<{ user_id: string; source: string }>(
     `SELECT user_id, source FROM sync_cursors
      WHERE last_synced_at + (sync_interval_hours * interval '1 hour') < now()`
   );
-  if (rows.length === 0) return;
-
-  const { enqueue } = await import("./queue");
-  for (const { user_id, source } of rows) {
+  for (const { user_id, source } of syncRows) {
     if (source === "gmail") {
       console.log(`[scheduler] enqueueing sync_gmail for user ${user_id}`);
-      enqueue({ type: "sync_gmail", userId: user_id });
+      await enqueue({ type: "sync_gmail", userId: user_id });
     } else if (source === "slack") {
       console.log(`[scheduler] enqueueing sync_slack for user ${user_id}`);
-      enqueue({ type: "sync_slack", userId: user_id });
+      await enqueue({ type: "sync_slack", userId: user_id });
     }
+  }
+
+  // Due Tier 3 workflows. listDueWorkflows runs as admin to span all users
+  // (workflows is RLS-protected); the runner uses withUser for tenant queries.
+  const { listDueWorkflows } = await import("./workflows");
+  const due = await listDueWorkflows();
+  for (const w of due) {
+    console.log(`[scheduler] enqueueing run_workflow user=${w.user_id} workflow=${w.id}`);
+    await enqueue({ type: "run_workflow", userId: w.user_id, workflowId: w.id });
   }
 }
 
@@ -208,7 +281,7 @@ export async function syncSlack(userId: string): Promise<SyncResult> {
         });
       }
     } catch (err) {
-      console.error(`[slack-sync] failed to fetch ${convo.id}:`, err);
+      console.error(`[slack-sync] failed to fetch ${convo.id}:`, String((err as Error)?.message ?? err).slice(0, 200));
     }
   }
 
@@ -242,7 +315,14 @@ export async function syncSlack(userId: string): Promise<SyncResult> {
          (user_id, source, source_ref, subject, from_addr, date_sent, body_text)
        VALUES ($1, 'slack', $2, $3, $4, $5, $6)
        ON CONFLICT (user_id, source, source_ref) DO NOTHING`,
-      [userId, msg.sourceRef, msg.subject, senderName, msg.dateSent, resolvedText]
+      [
+        userId,
+        msg.sourceRef,
+        encrypt(msg.subject),
+        encrypt(senderName),
+        msg.dateSent,
+        encrypt(resolvedText),
+      ]
     );
     if (result.rowCount && result.rowCount > 0) newMessages++;
   }

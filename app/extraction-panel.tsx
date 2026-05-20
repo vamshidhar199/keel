@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Props {
   pending: number;
@@ -24,6 +24,35 @@ export function ExtractionPanel({
   const [pages, setPages] = useState(initialPages);
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Auto-poll while there's pending work, even when the user didn't click
+  // "Extract" themselves — covers the case where a background sync queued
+  // events and the user just landed on this page wondering why things look
+  // slow. Stops polling once pending hits 0 or the tab is hidden.
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  useEffect(() => {
+    if (pending === 0) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || document.hidden) return;
+      try {
+        const r = await fetch("/api/extract");
+        if (!r.ok) return;
+        const s = await r.json();
+        setPending(s.pending);
+        setExtracted(s.extracted);
+        setSkipped(s.skipped);
+        setFailed(s.failed);
+        setPages(s.pagesCreated);
+      } catch {}
+    };
+    const interval = setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [pending]);
 
   async function handleExtract(limit: number) {
     setRunning(true);
@@ -54,6 +83,12 @@ export function ExtractionPanel({
   const processed = extracted + skipped;
   const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
 
+  // First-sync hint: visible only when a large pending backlog exists and
+  // nothing has been processed yet. Sets the expectation that this initial
+  // pass takes longer than steady-state syncs without surfacing any API /
+  // billing detail to the user.
+  const isFirstSync = pending >= 30 && processed === 0 && failed === 0;
+
   const STATS = [
     { label: "Pending",   value: pending,   dotVar: "--c-muted" },
     { label: "Extracted", value: extracted, dotVar: "--c-stat2" },
@@ -74,6 +109,21 @@ export function ExtractionPanel({
           <p className="text-[10px] font-semibold uppercase tracking-widest mt-1" style={{ color: "var(--c-subtle)" }}>Complete</p>
         </div>
       </div>
+
+      {/* First-sync hint */}
+      {isFirstSync && (
+        <div
+          className="rounded-lg px-4 py-3 mb-5 text-[12px] leading-relaxed"
+          style={{
+            background: "var(--c-primary-m)",
+            border: "1px solid var(--c-card-border)",
+            color: "var(--c-fg)",
+          }}
+        >
+          We&rsquo;re processing your recent emails for the first time. This
+          usually takes a few minutes — you can leave this page and come back.
+        </div>
+      )}
 
       {/* Progress bar */}
       <div className="h-3 w-full rounded-full overflow-hidden mb-6 relative" style={{ background: "var(--c-surface-low)" }}>

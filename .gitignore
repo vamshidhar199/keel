@@ -41,3 +41,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# bun lockfile (repo uses npm; package-lock.json is the committed one)
+bun.lock
+
+# local Claude Code config
+.claude/

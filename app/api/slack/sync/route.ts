@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { hasSlackConnected } from "@/lib/slack";
-import { enqueue } from "@/lib/queue";
+import { enqueue } from "@/lib/queue/enqueue";
 
 export async function POST() {
   const session = await auth();
@@ -14,6 +14,6 @@ export async function POST() {
     return NextResponse.json({ error: "Slack not connected" }, { status: 400 });
   }
 
-  enqueue({ type: "sync_slack", userId: session.user.id });
+  await enqueue({ type: "sync_slack", userId: session.user.id });
   return NextResponse.json({ queued: true });
 }

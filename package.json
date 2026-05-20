@@ -6,30 +6,41 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "lint:rls": "bash -c '! grep -rn \"app\\.user_id\" --include=\"*.ts\" --include=\"*.tsx\" --exclude-dir=node_modules --exclude-dir=.next . | grep -v \"lib/db\\.ts\" | grep -v \"lib/migrate\\.ts\" | grep -v \"__tests__\" && ! grep -rn \"FROM pages\\|FROM content_chunks\\|FROM links\\|INTO pages\\|INTO content_chunks\\|INTO links\" --include=\"*.ts\" --exclude-dir=node_modules --exclude-dir=.next . | grep -v \"lib/gbrain\\.ts\" | grep -v \"lib/compose\\.ts\" | grep -v \"lib/pipeline\\.ts\" | grep -v \"lib/migrate\\.ts\" | grep -v \"__tests__\"'"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
     "@auth/pg-adapter": "^1.11.2",
+    "csv-parse": "^6.2.1",
     "execa": "^9.6.1",
     "googleapis": "^171.4.0",
+    "mammoth": "^1.12.0",
     "next": "16.2.4",
     "next-auth": "^5.0.0-beta.31",
     "openai": "^6.35.0",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.20.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-force-graph-2d": "^1.29.1"
+    "react-force-graph-2d": "^1.29.1",
+    "react-markdown": "^10.1.0",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.6"
   }
 }

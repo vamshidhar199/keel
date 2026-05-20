@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { enqueue } from "@/lib/queue";
+import { enqueue } from "@/lib/queue/enqueue";
 import { hasGmailScope } from "@/lib/gmail";
 
 export async function POST() {
@@ -12,13 +12,10 @@ export async function POST() {
   const userId = session.user.id;
   const gmailConnected = await hasGmailScope(userId);
   if (!gmailConnected) {
-    return NextResponse.json(
-      { error: "Gmail not connected" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Gmail not connected" }, { status: 400 });
   }
 
-  enqueue({ type: "sync_gmail", userId });
+  await enqueue({ type: "sync_gmail", userId });
 
   return NextResponse.json({ queued: true });
 }
