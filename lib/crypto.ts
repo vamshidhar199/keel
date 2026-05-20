@@ -5,7 +5,13 @@ const ALGO = "aes-256-gcm";
 const IV_LEN = 12;
 const TAG_LEN = 16;
 
-function loadKey(): Buffer {
+// Lazily resolved + memoized. Must NOT run at module-eval time: Next.js's
+// build "collect page data" phase imports every route module, and a throw
+// here would fail the build even though the build never encrypts anything.
+// The key is only actually needed at runtime, where ENCRYPTION_KEY is set.
+let cachedKey: Buffer | null = null;
+function getKey(): Buffer {
+  if (cachedKey) return cachedKey;
   const raw = process.env.ENCRYPTION_KEY;
   if (!raw) {
     throw new Error(
@@ -18,17 +24,16 @@ function loadKey(): Buffer {
       `ENCRYPTION_KEY must decode to 32 bytes (got ${buf.length}). Generate with: openssl rand -base64 32`
     );
   }
-  return buf;
+  cachedKey = buf;
+  return cachedKey;
 }
-
-const KEY = loadKey();
 
 export function encrypt(plaintext: string | null | undefined): string {
   if (plaintext === null || plaintext === undefined || plaintext === "") {
     return plaintext as string;
   }
   const iv = randomBytes(IV_LEN);
-  const cipher = createCipheriv(ALGO, KEY, iv);
+  const cipher = createCipheriv(ALGO, getKey(), iv);
   const ct = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${PREFIX}${iv.toString("base64")}:${tag.toString("base64")}:${ct.toString("base64")}`;
@@ -50,7 +55,7 @@ export function decrypt(value: string | null | undefined): string {
   const ct = Buffer.from(parts[2], "base64");
   if (iv.length !== IV_LEN) throw new Error(`Invalid IV length: ${iv.length}`);
   if (tag.length !== TAG_LEN) throw new Error(`Invalid auth tag length: ${tag.length}`);
-  const decipher = createDecipheriv(ALGO, KEY, iv);
+  const decipher = createDecipheriv(ALGO, getKey(), iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ct), decipher.final()]).toString("utf8");
 }
