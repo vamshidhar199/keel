@@ -17,13 +17,6 @@ export interface ActiveThreadItem {
   updated_at: string;
 }
 
-export interface QuietItem {
-  slug: string;
-  title: string;
-  type: string | null;
-  days_quiet: number;
-}
-
 export interface RecipeCardItem {
   ref: string;        // page slug | thread_ref | commitment id (caller decides)
   kind: "page" | "thread" | "commitment" | "other";
@@ -49,7 +42,6 @@ export interface DigestContent {
   commitments: OpenCommitment[];
   awaiting_reply: AwaitingReplyItem[];
   active_threads: ActiveThreadItem[];
-  quiet: QuietItem[];
   opportunities: OpportunityItem[];
   recipes: RecipeCardData[];
   meta: DigestMeta;
@@ -94,13 +86,13 @@ export function gapHoursFor(lastSeenAt: Date | null): number {
 
 // Adaptive window: 14d baseline for awaiting-reply, widen when gap > 30h.
 // Caps at 30d so prompts stay bounded.
-function awaitingWindowDays(gapHours: number): number {
+export function awaitingWindowDays(gapHours: number): number {
   if (gapHours <= 30) return 14;
   return Math.min(30, Math.ceil(gapHours / 12));
 }
 
 // Active threads baseline 7d, widen up to 14d when gap warrants.
-function activeWindowDays(gapHours: number): number {
+export function activeWindowDays(gapHours: number): number {
   if (gapHours <= 30) return 7;
   return Math.min(14, Math.ceil(gapHours / 24) + 1);
 }
@@ -230,36 +222,6 @@ export async function listOpportunities(
   });
 }
 
-export async function listQuiet(
-  userId: string,
-  limit = 3
-): Promise<QuietItem[]> {
-  return withUser(userId, async (c) => {
-    const { rows } = await c.query<{
-      slug: string;
-      title: string;
-      type: string | null;
-      updated_at: Date;
-    }>(
-      `SELECT slug, title, type, updated_at
-       FROM pages
-       WHERE type IN ('person', 'project')
-         AND updated_at < now() - INTERVAL '14 days'
-         AND updated_at > created_at + INTERVAL '7 days'
-       ORDER BY updated_at DESC
-       LIMIT $1`,
-      [limit]
-    );
-    const now = Date.now();
-    return rows.map((r) => ({
-      slug: r.slug,
-      title: r.title,
-      type: r.type,
-      days_quiet: Math.floor((now - r.updated_at.getTime()) / (1000 * 60 * 60 * 24)),
-    }));
-  });
-}
-
 // ── Feedback summarization (F2) ──────────────────────────────────────────────
 
 export interface DownvoteSummary {
@@ -324,14 +286,13 @@ export function buildMemoriesBlock(
 
 async function generateGreeting(
   userId: string,
-  counts: { commitments: number; awaiting: number; active: number; quiet: number; recipes: number; opportunities: number },
+  counts: { commitments: number; awaiting: number; active: number; recipes: number; opportunities: number },
   memoriesBlock: string
 ): Promise<string> {
   const total =
     counts.commitments +
     counts.awaiting +
     counts.active +
-    counts.quiet +
     counts.recipes +
     counts.opportunities;
   if (total === 0) {
@@ -342,7 +303,6 @@ async function generateGreeting(
     counts.commitments > 0 ? `${counts.commitments} open promises` : null,
     counts.awaiting > 0 ? `${counts.awaiting} awaiting your reply` : null,
     counts.active > 0 ? `${counts.active} active threads this week` : null,
-    counts.quiet > 0 ? `${counts.quiet} relationships gone quiet` : null,
     counts.opportunities > 0 ? `${counts.opportunities} new opportunities` : null,
     counts.recipes > 0 ? `${counts.recipes} custom cards` : null,
   ]
@@ -561,12 +521,11 @@ export async function composeDigest(
   const awaitDays = awaitingWindowDays(gapHours);
   const activeDays = activeWindowDays(gapHours);
 
-  const [commitments, awaiting_reply, active_threads, quiet, opportunities, downvotes, recipeRows] =
+  const [commitments, awaiting_reply, active_threads, opportunities, downvotes, recipeRows] =
     await Promise.all([
       listOpenCommitments(userId, 5),
       listAwaitingReply(userId, email, 5, awaitDays),
       listActiveThreads(userId, 5, activeDays),
-      listQuiet(userId, 3),
       listOpportunities(userId, 5),
       summarizeRecentDownvotes(userId),
       listEnabledRecipes(userId),
@@ -584,7 +543,6 @@ export async function composeDigest(
       commitments: commitments.length,
       awaiting: awaiting_reply.length,
       active: active_threads.length,
-      quiet: quiet.length,
       recipes: recipes.reduce((acc, r) => acc + r.items.length, 0),
       opportunities: opportunities.length,
     },
@@ -597,7 +555,6 @@ export async function composeDigest(
     commitments,
     awaiting_reply,
     active_threads,
-    quiet,
     opportunities,
     recipes,
     meta: {

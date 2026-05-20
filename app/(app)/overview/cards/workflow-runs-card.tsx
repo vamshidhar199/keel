@@ -63,6 +63,7 @@ export function WorkflowRunsCard({ items, digestId }: Props) {
                   <span
                     className="text-[10px] shrink-0"
                     style={{ color: "var(--c-subtle)" }}
+                    suppressHydrationWarning
                   >
                     {relativeShort(r.ran_at)}
                   </span>

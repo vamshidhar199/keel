@@ -43,7 +43,7 @@ export function CommitmentsCard({ initial, digestId }: Props) {
   }
 
   return (
-    <BentoCard icon="task_alt" title="Today's promises" statVar="stat1" count={items.length}>
+    <BentoCard icon="task_alt" title="Open promises" statVar="stat1" count={items.length}>
       {items.length === 0 ? (
         <BentoEmpty message="Nothing pending. When you commit to something in an email, I'll surface it here." />
       ) : (

@@ -15,7 +15,6 @@ export interface ShowFlags {
   show_commitments?: boolean;
   show_awaiting_reply?: boolean;
   show_active_threads?: boolean;
-  show_quiet_but_important?: boolean;
   show_opportunities?: boolean;
   show_workflow_runs?: boolean;
 }

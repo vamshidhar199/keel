@@ -63,7 +63,7 @@ export async function uploadFile(
        VALUES ($1, $2, $3, $4, $5, 'parsing')
        RETURNING id, filename, mime_type, byte_size, parse_status, parse_error,
                  raw_event_id, uploaded_at`,
-      [userId, filename, resolvedMime, input.bytes.byteLength, encryptBytes(input.bytes), "parsing"]
+      [userId, filename, resolvedMime, input.bytes.byteLength, encryptBytes(input.bytes)]
     );
     return r.rows[0];
   });

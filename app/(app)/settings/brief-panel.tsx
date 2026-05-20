@@ -8,7 +8,6 @@ interface Prefs {
   show_commitments: boolean;
   show_awaiting_reply: boolean;
   show_active_threads: boolean;
-  show_quiet_but_important: boolean;
   show_opportunities: boolean;
   show_workflow_runs: boolean;
   ai_memories: string;
@@ -20,7 +19,6 @@ const DEFAULTS: Prefs = {
   show_commitments: true,
   show_awaiting_reply: true,
   show_active_threads: true,
-  show_quiet_but_important: true,
   show_opportunities: true,
   show_workflow_runs: true,
   ai_memories: "",
@@ -125,13 +123,6 @@ export function BriefPanel({ initialTimezone }: Props) {
         value={prefs.show_active_threads}
         disabled={saving || !prefs.digest_enabled}
         onChange={(v) => patch({ show_active_threads: v })}
-      />
-      <Toggle
-        label="Show quiet but important"
-        sublabel="Relationships that haven't surfaced in a while"
-        value={prefs.show_quiet_but_important}
-        disabled={saving || !prefs.digest_enabled}
-        onChange={(v) => patch({ show_quiet_but_important: v })}
       />
       <Toggle
         label="Show opportunities"

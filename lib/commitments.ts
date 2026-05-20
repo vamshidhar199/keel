@@ -7,23 +7,24 @@ export interface OpenCommitment {
   created_at: Date;
 }
 
-// Surface only open commitments whose underlying email is recent. After
-// `withinDays` (default 7), a promise hasn't been acted on or marked done —
-// presume stale and drop it from the brief. Falls back to commitments.created_at
-// when there's no source raw_event (manual entries, future sources).
+// Surface open commitments extracted within `withinDays` (default 30). Note:
+// the staleness clock measures from extraction time (c.created_at), NOT the
+// source email's send date. An initial sync that backfills a year of email
+// produces commitments TODAY even if the underlying emails are old — those
+// are brand-new to the user, not stale. Ordered by extraction time so the
+// most recently-surfaced promises appear first.
 export async function listOpenCommitments(
   userId: string,
   limit = 5,
-  withinDays = 7
+  withinDays = 30
 ): Promise<OpenCommitment[]> {
   return withUser(userId, async (c) => {
     const { rows } = await c.query<OpenCommitment>(
       `SELECT c.id, c.text, c.entity_slug, c.created_at
          FROM commitments c
-         LEFT JOIN raw_events r ON r.id = c.raw_event_id
         WHERE c.status = 'open'
-          AND COALESCE(r.date_sent, c.created_at) > now() - ($1 || ' days')::interval
-        ORDER BY COALESCE(r.date_sent, c.created_at) DESC
+          AND c.created_at > now() - ($1 || ' days')::interval
+        ORDER BY c.created_at DESC
         LIMIT $2`,
       [withinDays, limit]
     );

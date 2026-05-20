@@ -121,11 +121,6 @@ export default async function DigestsPage() {
                   items={(d.content.active_threads ?? []).map((t) => t.title)}
                 />
                 <DigestSection
-                  label="Quiet"
-                  count={d.content.quiet?.length ?? 0}
-                  items={(d.content.quiet ?? []).map((q) => `${q.title} · ${q.days_quiet}d`)}
-                />
-                <DigestSection
                   label="Opportunities"
                   count={d.content.opportunities?.length ?? 0}
                   items={(d.content.opportunities ?? []).map((o) => o.title)}

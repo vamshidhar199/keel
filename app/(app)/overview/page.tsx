@@ -2,12 +2,21 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { getMetaDb } from "@/lib/db";
 import { listOpenCommitments } from "@/lib/commitments";
-import { getOrGenerateDigest, localDateFor } from "@/lib/digest";
+import {
+  getOrGenerateDigest,
+  localDateFor,
+  listAwaitingReply,
+  listActiveThreads,
+  listOpportunities,
+  loadUserContext,
+  gapHoursFor,
+  awaitingWindowDays,
+  activeWindowDays,
+} from "@/lib/digest";
 import { listRecentWorkflowRuns } from "@/lib/workflows";
 import { CommitmentsCard } from "./cards/commitments-card";
 import { AwaitingReplyCard } from "./cards/awaiting-reply-card";
 import { ActiveThreadsCard } from "./cards/active-threads-card";
-import { QuietCard } from "./cards/quiet-card";
 import { OpportunitiesCard } from "./cards/opportunities-card";
 import { WorkflowRunsCard } from "./cards/workflow-runs-card";
 import { RecipeCard } from "./cards/recipe-card";
@@ -23,7 +32,6 @@ interface Prefs {
   show_commitments: boolean;
   show_awaiting_reply: boolean;
   show_active_threads: boolean;
-  show_quiet_but_important: boolean;
   show_opportunities: boolean;
   show_workflow_runs: boolean;
   bento_layout: LayoutEntry[];
@@ -34,7 +42,6 @@ const DEFAULT_PREFS: Prefs = {
   show_commitments: true,
   show_awaiting_reply: true,
   show_active_threads: true,
-  show_quiet_but_important: true,
   show_opportunities: true,
   show_workflow_runs: true,
   bento_layout: [],
@@ -49,7 +56,7 @@ async function getUserContext(userId: string) {
     ),
     db.query<Prefs>(
       `SELECT digest_enabled, show_commitments, show_awaiting_reply,
-              show_active_threads, show_quiet_but_important, show_opportunities,
+              show_active_threads, show_opportunities,
               show_workflow_runs, bento_layout
        FROM user_preferences WHERE user_id = $1`,
       [userId]
@@ -83,19 +90,40 @@ export default async function OverviewPage() {
   const digest = digestRow?.content ?? null;
   const digestId = digestRow?.id ?? null;
 
-  // Commitments are fetched fresh (not from the cached digest) because the user
-  // marks them done/dismiss throughout the day.
-  const liveCommitments = await listOpenCommitments(userId, 5);
-  // Workflow runs are also fetched fresh — they can fire at any time during
-  // the day after the digest was first composed.
-  const recentRuns = prefs.show_workflow_runs
-    ? await listRecentWorkflowRuns(userId, 2, 3).catch(() => [])
-    : [];
+  // Everything that surfaces in the bento grid is fetched LIVE per page load
+  // — the digest cache is reserved for LLM-derived content (greeting, recipes)
+  // because regenerating those costs tokens. List data is pure SQL and cheap
+  // to refetch; users expect what they see to reflect actions they've taken
+  // since the morning's digest composed, not a frozen snapshot.
+  //
+  // We mirror the digest's adaptive windowing: when the user hasn't checked in
+  // for a while (gap > 30h), widen the awaiting-reply + active-threads windows
+  // so they get caught up instead of seeing nothing. Same logic composeDigest
+  // uses; importing the helpers keeps it in one place.
+  const ctx = await loadUserContext(userId);
+  const gapHours = gapHoursFor(ctx.last_seen_at);
+  const awaitDays = awaitingWindowDays(gapHours);
+  const activeDays = activeWindowDays(gapHours);
 
-  const awaitingReply = digest?.awaiting_reply ?? [];
-  const activeThreads = digest?.active_threads ?? [];
-  const quiet = digest?.quiet ?? [];
-  const opportunities = digest?.opportunities ?? [];
+  const [
+    liveCommitments,
+    liveAwaitingReply,
+    liveActiveThreads,
+    liveOpportunities,
+    recentRuns,
+  ] = await Promise.all([
+    listOpenCommitments(userId, 5),
+    listAwaitingReply(userId, email, 5, awaitDays),
+    listActiveThreads(userId, 5, activeDays),
+    listOpportunities(userId, 5),
+    prefs.show_workflow_runs
+      ? listRecentWorkflowRuns(userId, 2, 3).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+
+  const awaitingReply = liveAwaitingReply;
+  const activeThreads = liveActiveThreads;
+  const opportunities = liveOpportunities;
   const recipes = digest?.recipes ?? [];
   const meta = digest?.meta;
 
@@ -188,11 +216,6 @@ export default async function OverviewPage() {
               node: <ActiveThreadsCard items={activeThreads} digestId={digestId} />,
             },
             {
-              key: "quiet_but_important",
-              hideFlag: "show_quiet_but_important",
-              node: <QuietCard items={quiet} digestId={digestId} />,
-            },
-            {
               key: "opportunities",
               hideFlag: "show_opportunities",
               node: <OpportunitiesCard items={opportunities} digestId={digestId} />,
@@ -215,7 +238,6 @@ export default async function OverviewPage() {
                 show_commitments: prefs.show_commitments,
                 show_awaiting_reply: prefs.show_awaiting_reply,
                 show_active_threads: prefs.show_active_threads,
-                show_quiet_but_important: prefs.show_quiet_but_important,
                 show_opportunities: prefs.show_opportunities,
                 show_workflow_runs: prefs.show_workflow_runs,
               }}

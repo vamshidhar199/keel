@@ -13,7 +13,6 @@ export interface UserPreferences {
   show_commitments: boolean;
   show_awaiting_reply: boolean;
   show_active_threads: boolean;
-  show_quiet_but_important: boolean;
   show_opportunities: boolean;
   show_workflow_runs: boolean;
   ai_memories: string;
@@ -26,7 +25,6 @@ const DEFAULTS: UserPreferences = {
   show_commitments: true,
   show_awaiting_reply: true,
   show_active_threads: true,
-  show_quiet_but_important: true,
   show_opportunities: true,
   show_workflow_runs: true,
   ai_memories: "",
@@ -61,7 +59,7 @@ export async function GET() {
   const { rows } = await db.query<UserPreferences>(
     `SELECT digest_enabled, digest_hour_local,
             show_commitments, show_awaiting_reply,
-            show_active_threads, show_quiet_but_important,
+            show_active_threads,
             show_opportunities, show_workflow_runs, ai_memories,
             bento_layout
      FROM user_preferences WHERE user_id = $1`,
@@ -98,11 +96,14 @@ export async function PATCH(req: NextRequest) {
 
   const db = getMetaDb();
   try {
+    // show_quiet_but_important column still exists in the DB but no UI reads
+    // or writes it. INSERT path lets it default (true) and UPDATE path leaves
+    // it untouched. Drop the column in a future migration if cleanup desired.
     await db.query(
       `INSERT INTO user_preferences
          (user_id, digest_enabled, digest_hour_local,
           show_commitments, show_awaiting_reply,
-          show_active_threads, show_quiet_but_important,
+          show_active_threads,
           show_opportunities, show_workflow_runs, ai_memories,
           bento_layout, updated_at)
        VALUES ($1,
@@ -113,9 +114,8 @@ export async function PATCH(req: NextRequest) {
                COALESCE($6, true),
                COALESCE($7, true),
                COALESCE($8, true),
-               COALESCE($9, true),
-               COALESCE($10, ''),
-               COALESCE($11::jsonb, '[]'::jsonb),
+               COALESCE($9, ''),
+               COALESCE($10::jsonb, '[]'::jsonb),
                now())
        ON CONFLICT (user_id) DO UPDATE SET
          digest_enabled            = COALESCE($2, user_preferences.digest_enabled),
@@ -123,11 +123,10 @@ export async function PATCH(req: NextRequest) {
          show_commitments          = COALESCE($4, user_preferences.show_commitments),
          show_awaiting_reply       = COALESCE($5, user_preferences.show_awaiting_reply),
          show_active_threads       = COALESCE($6, user_preferences.show_active_threads),
-         show_quiet_but_important  = COALESCE($7, user_preferences.show_quiet_but_important),
-         show_opportunities        = COALESCE($8, user_preferences.show_opportunities),
-         show_workflow_runs        = COALESCE($9, user_preferences.show_workflow_runs),
-         ai_memories               = COALESCE($10, user_preferences.ai_memories),
-         bento_layout              = COALESCE($11::jsonb, user_preferences.bento_layout),
+         show_opportunities        = COALESCE($7, user_preferences.show_opportunities),
+         show_workflow_runs        = COALESCE($8, user_preferences.show_workflow_runs),
+         ai_memories               = COALESCE($9, user_preferences.ai_memories),
+         bento_layout              = COALESCE($10::jsonb, user_preferences.bento_layout),
          updated_at                = now()`,
       [
         session.user.id,
@@ -136,7 +135,6 @@ export async function PATCH(req: NextRequest) {
         typeof body.show_commitments === "boolean" ? body.show_commitments : null,
         typeof body.show_awaiting_reply === "boolean" ? body.show_awaiting_reply : null,
         typeof body.show_active_threads === "boolean" ? body.show_active_threads : null,
-        typeof body.show_quiet_but_important === "boolean" ? body.show_quiet_but_important : null,
         typeof body.show_opportunities === "boolean" ? body.show_opportunities : null,
         typeof body.show_workflow_runs === "boolean" ? body.show_workflow_runs : null,
         aiMemories,
