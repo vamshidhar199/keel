@@ -1,9 +1,34 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getMetaDb, withUser } from "./db";
 import { extractEmail } from "./extract";
+import { listOpenCommitments } from "./commitments";
 import { findExistingPage, composePage, getKnownEntities, filterRelevantEntities } from "./compose";
 import { putPage } from "./gbrain";
 import { decrypt } from "./crypto";
+
+// Cheap preflight to skip obvious bulk/transactional mail without paying for a
+// Haiku call just to hear "worth_extracting=false". Conservative on purpose:
+// requires BOTH an unsubscribe affordance AND promotional/transactional
+// language, so recruiter pitches and personal mail with a footer
+// unsubscribe link still go through the LLM.
+//
+// Diagnostics audit (May 2026): ~60% of one user's daily Haiku spend was
+// classify-and-skip on bulk mail. This catches the densest slice of that
+// pool without risking real signal.
+const PROMO_SIGNALS_RE =
+  /\b(% off|\$\d+ off|sale ends|free shipping|deal of the day|order #|order number|your order|your purchase|tracking number|receipt|invoice|newsletter|black friday|cyber monday|limited time offer)\b/i;
+
+function isObviouslyBulk(
+  subject: string,
+  fromAddr: string,
+  bodyText: string
+): boolean {
+  const lowBody = bodyText.toLowerCase();
+  const hasUnsub =
+    lowBody.includes("unsubscribe") || lowBody.includes("list-unsubscribe");
+  if (!hasUnsub) return false;
+  return PROMO_SIGNALS_RE.test(bodyText) || PROMO_SIGNALS_RE.test(subject);
+}
 
 // A 429 that survived the Anthropic SDK's 8 retries means the org TPM ceiling
 // is saturated for longer than ~5-8 minutes. Don't kill the event — reset it
@@ -50,6 +75,17 @@ export async function processRawEvent(
   const fromAddr = decrypt(event.from_addr) ?? "";
   const bodyText = decrypt(event.body_text) ?? "";
 
+  // Cheap preflight — skip obvious bulk mail before paying for a Haiku call.
+  // Decided BEFORE flipping status to 'processing' so we go straight from
+  // pending → skipped in one write.
+  if (isObviouslyBulk(subject, fromAddr, bodyText)) {
+    await db.query(
+      `UPDATE raw_events SET extraction_status = 'skipped', extracted_at = now() WHERE id = $1`,
+      [eventId]
+    );
+    return { eventId, status: "skipped", pagesWritten: [] };
+  }
+
   // Mark as in-progress to prevent double-processing.
   await db.query(
     `UPDATE raw_events SET extraction_status = 'processing' WHERE id = $1`,
@@ -57,8 +93,15 @@ export async function processRawEvent(
   );
 
   try {
-    // Fetch known entities once — used by both Haiku (slug reuse) and Sonnet (wikilinks).
-    const knownEntities = await getKnownEntities(userId);
+    // Fetch known entities + currently open commitments. Both feed into Haiku:
+    // entities so slugs get reused, commitments so the LLM can mark them as
+    // updated/fulfilled instead of inserting duplicates. Pull a wider list (30
+    // items, 90-day window) than the overview card shows — extraction needs
+    // recall, not the trimmed UI surface.
+    const [knownEntities, openCommitments] = await Promise.all([
+      getKnownEntities(userId),
+      listOpenCommitments(userId, 30, 90),
+    ]);
 
     // Step 1 — Haiku extraction.
     const extraction = await extractEmail(
@@ -70,7 +113,8 @@ export async function processRawEvent(
         date_sent: event.date_sent?.toISOString() ?? null,
         body_text: bodyText,
       },
-      knownEntities
+      knownEntities,
+      openCommitments.map((c) => ({ id: c.id, text: c.text, entitySlugs: c.entitySlugs }))
     );
 
     if (!extraction.worthExtracting || extraction.entities.length === 0) {
@@ -122,16 +166,72 @@ export async function processRawEvent(
       pagesWritten.push(slug);
     }
 
-    // Step 5 — surface extracted commitments. Reuse the Haiku result already in
-    // memory; no extra LLM call. Attribute to the first entity as a best guess.
-    if (extraction.commitments.length > 0) {
-      const attributedSlug = extraction.entities[0]?.slug ?? null;
+    // Step 5 — apply LLM-judged commitment actions. The extractor decided per
+    // commitment whether it's a new promise, a rephrasing of one already open
+    // (action=update), or that this email fulfills an existing one
+    // (resolved ids). All writes go through a single tx so a partial failure
+    // can't leave commitments + commitment_entities out of sync.
+    if (
+      extraction.commitmentActions.length > 0 ||
+      extraction.resolvedCommitmentIds.length > 0
+    ) {
       await withUser(userId, async (c) => {
-        for (const text of extraction.commitments) {
+        for (const a of extraction.commitmentActions) {
+          // Denormed primary slug on commitments.entity_slug — kept for the
+          // legacy backfill-engagement path that joins on it. Source of truth
+          // is the commitment_entities join table written just below.
+          const primarySlug = a.entitySlugs[0] ?? null;
+
+          let commitmentId: string;
+          if (a.action === "update") {
+            const { rows } = await c.query<{ id: string }>(
+              `UPDATE commitments
+                  SET text = $2, entity_slug = $3
+                WHERE id = $1 AND status = 'open'
+                RETURNING id`,
+              [a.existingId, a.text, primarySlug]
+            );
+            // If the row was already resolved/dismissed between context load
+            // and write, fall back to creating a fresh row.
+            if (rows[0]) {
+              commitmentId = rows[0].id;
+              await c.query(
+                `DELETE FROM commitment_entities WHERE commitment_id = $1`,
+                [commitmentId]
+              );
+            } else {
+              const ins = await c.query<{ id: string }>(
+                `INSERT INTO commitments (user_id, raw_event_id, text, entity_slug)
+                 VALUES ($1, $2, $3, $4) RETURNING id`,
+                [userId, eventId, a.text, primarySlug]
+              );
+              commitmentId = ins.rows[0].id;
+            }
+          } else {
+            const ins = await c.query<{ id: string }>(
+              `INSERT INTO commitments (user_id, raw_event_id, text, entity_slug)
+               VALUES ($1, $2, $3, $4) RETURNING id`,
+              [userId, eventId, a.text, primarySlug]
+            );
+            commitmentId = ins.rows[0].id;
+          }
+
+          for (const slug of a.entitySlugs) {
+            await c.query(
+              `INSERT INTO commitment_entities (commitment_id, user_id, entity_slug)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (commitment_id, entity_slug) DO NOTHING`,
+              [commitmentId, userId, slug]
+            );
+          }
+        }
+
+        if (extraction.resolvedCommitmentIds.length > 0) {
           await c.query(
-            `INSERT INTO commitments (user_id, raw_event_id, text, entity_slug)
-             VALUES ($1, $2, $3, $4)`,
-            [userId, eventId, text, attributedSlug]
+            `UPDATE commitments
+                SET status = 'done', resolved_at = now()
+              WHERE id = ANY($1::uuid[]) AND status = 'open'`,
+            [extraction.resolvedCommitmentIds]
           );
         }
       });

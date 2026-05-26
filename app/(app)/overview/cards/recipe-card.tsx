@@ -1,17 +1,19 @@
 import { BentoCard, BentoEmpty } from "./bento-card";
 import { ThumbsRow } from "../thumbs-row";
 import { QuickViewLink } from "../quick-view-link";
+import { gmailThreadUrl } from "@/lib/gmail-url";
 import type { RecipeCardData } from "@/lib/digest";
 
 interface Props {
   card: RecipeCardData;
   digestId: string | null;
+  userEmail: string;
 }
 
 // User-defined card rendered from a saved recipe. Items can be threads or
 // pages — we deep-link accordingly. Thumbs row sits next to each item for
 // feedback-tuning future recipe runs.
-export function RecipeCard({ card, digestId }: Props) {
+export function RecipeCard({ card, digestId, userEmail }: Props) {
   return (
     <BentoCard
       icon="auto_awesome"
@@ -26,7 +28,7 @@ export function RecipeCard({ card, digestId }: Props) {
           {card.items.map((it) => {
             const href =
               it.kind === "thread"
-                ? `https://mail.google.com/mail/u/0/#inbox/${it.ref}`
+                ? gmailThreadUrl(userEmail, it.ref)
                 : it.kind === "page"
                 ? `/pages/${it.ref}`
                 : null;

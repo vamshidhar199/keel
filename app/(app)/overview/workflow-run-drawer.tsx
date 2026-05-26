@@ -8,6 +8,7 @@ interface Source {
   ref: string;
   kind: "thread" | "page" | "commitment" | "other";
   label: string;
+  gmail_url?: string | null;
 }
 
 interface Payload {
@@ -205,7 +206,7 @@ export function WorkflowRunDrawer({ runId, onClose }: Props) {
                     {data.source_refs.map((s) => {
                       const href =
                         s.kind === "thread"
-                          ? `https://mail.google.com/mail/u/0/#inbox/${s.ref}`
+                          ? s.gmail_url ?? null
                           : s.kind === "page"
                           ? `/pages/${s.ref}`
                           : null;
