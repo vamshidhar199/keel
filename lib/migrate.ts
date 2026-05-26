@@ -447,6 +447,34 @@ CREATE POLICY files_isolation ON files
   WITH CHECK  (user_id = current_setting('app.user_id')::uuid);
 `;
 
+// Multi-entity attribution for commitments. The legacy commitments.entity_slug
+// column stays for back-compat reads (still populated with the primary slug),
+// but the join table is the source of truth: a single commitment can surface
+// under every person/company/project page it touches. The LLM judge in
+// extract.ts also keys off this — it sees existing commitments and decides
+// "rephrase of #abc" or "fulfilled by this email" rather than inserting a dupe.
+const SCHEMA_COMMITMENT_ENTITIES = `
+CREATE TABLE IF NOT EXISTS commitment_entities (
+  commitment_id UUID NOT NULL REFERENCES commitments(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL,
+  entity_slug TEXT NOT NULL,
+  PRIMARY KEY (commitment_id, entity_slug)
+);
+CREATE INDEX IF NOT EXISTS idx_commitment_entities_slug
+  ON commitment_entities (user_id, entity_slug);
+ALTER TABLE commitment_entities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE commitment_entities FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS commitment_entities_isolation ON commitment_entities;
+CREATE POLICY commitment_entities_isolation ON commitment_entities
+  USING       (user_id = current_setting('app.user_id')::uuid)
+  WITH CHECK  (user_id = current_setting('app.user_id')::uuid);
+
+INSERT INTO commitment_entities (commitment_id, user_id, entity_slug)
+  SELECT id, user_id, entity_slug FROM commitments
+  WHERE entity_slug IS NOT NULL
+ON CONFLICT (commitment_id, entity_slug) DO NOTHING;
+`;
+
 // User-creatable Skills — named system-prompt addendums invokable in /ask.
 const SCHEMA_SKILLS = `
 CREATE TABLE IF NOT EXISTS skills (
@@ -572,6 +600,15 @@ export async function runMigrations(): Promise<void> {
     console.log("[migrate] skills schema ok");
   } catch (err) {
     console.error("[migrate] skills schema failed:", (err as Error).message);
+  }
+
+  // Step 8g: commitment_entities join table — multi-entity attribution +
+  // backfill from the legacy single-slug column.
+  try {
+    await db.query(SCHEMA_COMMITMENT_ENTITIES);
+    console.log("[migrate] commitment_entities schema ok");
+  } catch (err) {
+    console.error("[migrate] commitment_entities schema failed:", (err as Error).message);
   }
 
   // Step 9 (final): grant app role on all tables. Must run after every CREATE TABLE

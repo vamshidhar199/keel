@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { withUser } from "@/lib/db";
+import { gmailThreadUrl } from "@/lib/gmail-url";
 
 export interface RunDrawerSource {
   ref: string;
   kind: "thread" | "page" | "commitment" | "other";
   label: string;
+  // Pre-built Gmail URL for thread sources (null otherwise); pinned to the
+  // logged-in user's address so multi-account browsers route correctly.
+  gmail_url?: string | null;
 }
 
 export interface RunDrawerPayload {
@@ -49,6 +53,7 @@ export async function GET(
     );
     const row = r.rows[0];
     if (!row) return null;
+    const userEmail = session.user.email;
     const out: RunDrawerPayload = {
       run_id: row.run_id,
       workflow_id: row.workflow_id,
@@ -57,7 +62,10 @@ export async function GET(
       ran_at: row.ran_at.toISOString(),
       output_text: row.output_text,
       error: row.error,
-      source_refs: row.source_refs ?? [],
+      source_refs: (row.source_refs ?? []).map((s) => ({
+        ...s,
+        gmail_url: s.kind === "thread" ? gmailThreadUrl(userEmail, s.ref) : null,
+      })),
     };
     return out;
   });

@@ -25,6 +25,7 @@ import { LastSeenSync } from "./last-seen-sync";
 import { DoneForToday } from "./done-for-today";
 import { DrawerMount } from "./drawer-mount";
 import { WorkflowRunDrawerMount } from "./workflow-run-drawer-mount";
+import { CommitmentDrawerMount } from "./commitment-drawer-mount";
 import { BentoBoard, type BentoCardDef, type LayoutEntry } from "./bento-board";
 
 interface Prefs {
@@ -144,6 +145,7 @@ export default async function OverviewPage() {
       <LastSeenSync />
       <DrawerMount />
       <WorkflowRunDrawerMount />
+      <CommitmentDrawerMount />
 
       {/* Sticky header */}
       <header className="header-glass sticky top-0 h-16 flex items-center px-6 z-30">
@@ -208,7 +210,7 @@ export default async function OverviewPage() {
             {
               key: "awaiting_reply",
               hideFlag: "show_awaiting_reply",
-              node: <AwaitingReplyCard items={awaitingReply} digestId={digestId} />,
+              node: <AwaitingReplyCard items={awaitingReply} digestId={digestId} userEmail={email} />,
             },
             {
               key: "active_threads",
@@ -227,7 +229,7 @@ export default async function OverviewPage() {
             },
             ...recipes.map((r) => ({
               key: `recipe:${r.recipe_id}`,
-              node: <RecipeCard card={r} digestId={digestId} />,
+              node: <RecipeCard card={r} digestId={digestId} userEmail={email} />,
             })),
           ];
           return (

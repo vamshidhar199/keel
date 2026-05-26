@@ -1,10 +1,12 @@
 import { BentoCard, BentoEmpty } from "./bento-card";
 import { ThumbsRow } from "../thumbs-row";
 import type { AwaitingReplyItem } from "@/lib/digest";
+import { gmailThreadUrl } from "@/lib/gmail-url";
 
 interface Props {
   items: AwaitingReplyItem[];
   digestId: string | null;
+  userEmail: string;
 }
 
 function relativeDays(iso: string): string {
@@ -23,7 +25,7 @@ function senderName(addr: string): string {
   return addr.split("@")[0];
 }
 
-export function AwaitingReplyCard({ items, digestId }: Props) {
+export function AwaitingReplyCard({ items, digestId, userEmail }: Props) {
   return (
     <BentoCard icon="reply" title="Awaiting your reply" statVar="stat2" count={items.length}>
       {items.length === 0 ? (
@@ -33,7 +35,7 @@ export function AwaitingReplyCard({ items, digestId }: Props) {
           {items.map((it) => (
             <li key={it.thread_ref} className="group">
               <a
-                href={`https://mail.google.com/mail/u/0/#inbox/${it.thread_ref}`}
+                href={gmailThreadUrl(userEmail, it.thread_ref) ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block rounded-lg p-2 -mx-2 transition-colors hover:[background:var(--c-row-hover)]"

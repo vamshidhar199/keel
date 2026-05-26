@@ -11,6 +11,7 @@ interface Source {
   subject: string;
   date_sent: string | null;
   is_from_user: boolean;
+  gmail_url: string | null;
 }
 
 interface Fact {
@@ -117,7 +118,7 @@ export function PageDrawer({ slug, onClose }: Props) {
 
   const label = data ? itemLabel(data.type, data.kind) : "";
   const tone = data ? itemTone(data.type, data.kind) : { fg: "", bg: "" };
-  const latestThread = data?.sources.find((s) => s.thread_ref)?.thread_ref ?? null;
+  const latestThreadHref = data?.sources.find((s) => s.gmail_url)?.gmail_url ?? null;
   const inboundSource = data?.sources.find((s) => !s.is_from_user) ?? null;
   const userSentSource = data?.sources.find((s) => s.is_from_user) ?? null;
 
@@ -297,9 +298,7 @@ export function PageDrawer({ slug, onClose }: Props) {
                   </p>
                   <ul className="space-y-2">
                     {data.sources.map((s) => {
-                      const href = s.thread_ref
-                        ? `https://mail.google.com/mail/u/0/#inbox/${s.thread_ref}`
-                        : null;
+                      const href = s.gmail_url;
                       const inner = (
                         <div
                           className="rounded-lg p-3 transition-colors hover:[background:var(--c-row-hover)]"
@@ -381,9 +380,9 @@ export function PageDrawer({ slug, onClose }: Props) {
           style={{ borderTop: "1px solid var(--c-divider)" }}
         >
           <div className="flex gap-2">
-            {latestThread && (
+            {latestThreadHref && (
               <a
-                href={`https://mail.google.com/mail/u/0/#inbox/${latestThread}`}
+                href={latestThreadHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-[12px] font-semibold px-3 py-1.5 rounded-md transition-colors hover:[background:var(--c-row-hover)]"

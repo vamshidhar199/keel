@@ -3,7 +3,7 @@ import { withUser } from "./db";
 export interface OpenCommitment {
   id: string;
   text: string;
-  entity_slug: string | null;
+  entitySlugs: string[];
   created_at: Date;
 }
 
@@ -19,16 +19,33 @@ export async function listOpenCommitments(
   withinDays = 30
 ): Promise<OpenCommitment[]> {
   return withUser(userId, async (c) => {
-    const { rows } = await c.query<OpenCommitment>(
-      `SELECT c.id, c.text, c.entity_slug, c.created_at
+    const { rows } = await c.query<{
+      id: string;
+      text: string;
+      entity_slugs: string[] | null;
+      created_at: Date;
+    }>(
+      `SELECT c.id, c.text, c.created_at,
+              COALESCE(
+                array_agg(ce.entity_slug ORDER BY ce.entity_slug)
+                  FILTER (WHERE ce.entity_slug IS NOT NULL),
+                ARRAY[]::text[]
+              ) AS entity_slugs
          FROM commitments c
+         LEFT JOIN commitment_entities ce ON ce.commitment_id = c.id
         WHERE c.status = 'open'
           AND c.created_at > now() - ($1 || ' days')::interval
+        GROUP BY c.id
         ORDER BY c.created_at DESC
         LIMIT $2`,
       [withinDays, limit]
     );
-    return rows;
+    return rows.map((r) => ({
+      id: r.id,
+      text: r.text,
+      entitySlugs: r.entity_slugs ?? [],
+      created_at: r.created_at,
+    }));
   });
 }
 

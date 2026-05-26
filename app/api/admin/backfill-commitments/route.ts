@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
     [userId, offset, limit]
   );
 
+  // Admin backfill skips the open-commitments LLM judge: this only runs over
+  // raw_events that have NO existing commitments (the NOT IN filter above), so
+  // there's nothing to dedupe against. Every action will come back as "create".
   let inserted = 0;
   for (const ev of rows) {
     try {
@@ -45,18 +48,26 @@ export async function POST(req: NextRequest) {
         date_sent: ev.date_sent?.toISOString() ?? null,
         body_text: decrypt(ev.body_text) ?? "",
       });
-      if (result.commitments.length > 0) {
-        const slug = result.entities[0]?.slug ?? null;
+      if (result.commitmentActions.length > 0) {
         await withUser(userId, async (c) => {
-          for (const text of result.commitments) {
-            await c.query(
+          for (const a of result.commitmentActions) {
+            const primarySlug = a.entitySlugs[0] ?? null;
+            const { rows: ins } = await c.query<{ id: string }>(
               `INSERT INTO commitments (user_id, raw_event_id, text, entity_slug)
-               VALUES ($1, $2, $3, $4)`,
-              [userId, ev.id, text, slug]
+               VALUES ($1, $2, $3, $4) RETURNING id`,
+              [userId, ev.id, a.text, primarySlug]
             );
+            for (const slug of a.entitySlugs) {
+              await c.query(
+                `INSERT INTO commitment_entities (commitment_id, user_id, entity_slug)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT (commitment_id, entity_slug) DO NOTHING`,
+                [ins[0].id, userId, slug]
+              );
+            }
           }
         });
-        inserted += result.commitments.length;
+        inserted += result.commitmentActions.length;
       }
     } catch (err) {
       console.error(`[backfill-commitments] event=${ev.id} failed:`, (err as Error).message);

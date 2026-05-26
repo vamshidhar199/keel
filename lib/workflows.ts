@@ -571,11 +571,18 @@ async function workflowCandidates(
       )
     ),
     withUser(userId, (c) =>
-      c.query<{ id: string; text: string; entity_slug: string | null; created_at: Date }>(
-        `SELECT id, text, entity_slug, created_at
-           FROM commitments
-          WHERE status = 'open'
-          ORDER BY created_at DESC
+      c.query<{ id: string; text: string; entity_slugs: string[] | null; created_at: Date }>(
+        `SELECT c.id, c.text, c.created_at,
+                COALESCE(
+                  array_agg(ce.entity_slug ORDER BY ce.entity_slug)
+                    FILTER (WHERE ce.entity_slug IS NOT NULL),
+                  ARRAY[]::text[]
+                ) AS entity_slugs
+           FROM commitments c
+           LEFT JOIN commitment_entities ce ON ce.commitment_id = c.id
+          WHERE c.status = 'open'
+          GROUP BY c.id
+          ORDER BY c.created_at DESC
           LIMIT 10`
       )
     ),
@@ -606,11 +613,12 @@ async function workflowCandidates(
     });
   }
   for (const c of commitments.rows) {
+    const slugs = (c.entity_slugs ?? []).join(",") || "?";
     out.push({
       ref: c.id,
       kind: "commitment",
       label: c.text.slice(0, 100),
-      details: `commitment text="${c.text.slice(0, 200)}" slug=${c.entity_slug ?? "?"}`,
+      details: `commitment text="${c.text.slice(0, 200)}" slugs=${slugs}`,
     });
   }
 

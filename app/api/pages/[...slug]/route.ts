@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { withUser } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
 import { parseFrontmatter } from "@/lib/compose";
+import { gmailThreadUrl } from "@/lib/gmail-url";
 
 export interface PageDrawerSource {
   ref: string;
@@ -11,6 +12,8 @@ export interface PageDrawerSource {
   subject: string;
   date_sent: string | null;
   is_from_user: boolean;
+  // Pre-built Gmail URL pinned to the logged-in user's account.
+  gmail_url: string | null;
 }
 
 export interface PageDrawerFact {
@@ -181,6 +184,7 @@ export async function GET(
       subject: decrypt(s.subject ?? null) ?? "(no subject)",
       date_sent: s.date_sent?.toISOString() ?? null,
       is_from_user: s.is_from_user,
+      gmail_url: gmailThreadUrl(session.user.email, s.thread_ref),
     }));
 
     const out: PageDrawerPayload = {

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { BentoCard, BentoEmpty } from "./bento-card";
 import { ThumbsRow } from "../thumbs-row";
-import { QuickViewLink } from "../quick-view-link";
 import type { OpenCommitment } from "@/lib/commitments";
 
 interface Props {
@@ -12,8 +12,16 @@ interface Props {
 }
 
 export function CommitmentsCard({ initial, digestId }: Props) {
+  const router = useRouter();
+  const params = useSearchParams();
   const [items, setItems] = useState(initial);
   const [pending, setPending] = useState<Set<string>>(new Set());
+
+  function openDrawer(commitmentId: string) {
+    const next = new URLSearchParams(params.toString());
+    next.set("commitment", commitmentId);
+    router.replace(`/overview?${next.toString()}`, { scroll: false });
+  }
 
   async function resolve(id: string, status: "done" | "dismissed") {
     setPending((prev) => new Set(prev).add(id));
@@ -26,7 +34,6 @@ export function CommitmentsCard({ initial, digestId }: Props) {
         body: JSON.stringify({ status }),
       });
       if (!res.ok) {
-        // Roll back on failure.
         const restored = initial.find((c) => c.id === id);
         if (restored) setItems((prev) => [...prev, restored]);
       }
@@ -42,6 +49,15 @@ export function CommitmentsCard({ initial, digestId }: Props) {
     }
   }
 
+  // Buttons nested inside the clickable row must stop propagation so clicking
+  // them doesn't ALSO trigger openDrawer for the row.
+  function stop(handler: () => void) {
+    return (e: MouseEvent) => {
+      e.stopPropagation();
+      handler();
+    };
+  }
+
   return (
     <BentoCard icon="task_alt" title="Open promises" statVar="stat1" count={items.length}>
       {items.length === 0 ? (
@@ -51,12 +67,13 @@ export function CommitmentsCard({ initial, digestId }: Props) {
           {items.map((c) => (
             <li
               key={c.id}
-              className={`flex items-start gap-2 group transition-opacity ${
-                pending.has(c.id) ? "opacity-50" : ""
+              onClick={() => openDrawer(c.id)}
+              className={`flex items-start gap-2 group rounded-md -mx-2 px-2 py-1.5 transition-colors cursor-pointer hover:[background:var(--c-row-hover)] ${
+                pending.has(c.id) ? "opacity-50 pointer-events-none" : ""
               }`}
             >
               <button
-                onClick={() => resolve(c.id, "done")}
+                onClick={stop(() => resolve(c.id, "done"))}
                 disabled={pending.has(c.id)}
                 title="Mark done"
                 aria-label="Mark done"
@@ -74,18 +91,25 @@ export function CommitmentsCard({ initial, digestId }: Props) {
                 <p className="text-[13px] leading-snug" style={{ color: "var(--c-fg)" }}>
                   {c.text}
                 </p>
-                {c.entity_slug && (
-                  <QuickViewLink
-                    slug={c.entity_slug}
-                    className="text-[10px] font-mono hover:underline cursor-pointer"
-                  >
-                    <span style={{ color: "var(--c-subtle)" }}>{c.entity_slug}</span>
-                  </QuickViewLink>
+                {c.entitySlugs.length > 0 && (
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                    {c.entitySlugs.map((slug) => (
+                      <span
+                        key={slug}
+                        className="text-[10px] font-mono"
+                        style={{ color: "var(--c-subtle)" }}
+                      >
+                        {slug}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-              <ThumbsRow digestId={digestId} section="commitments" itemRef={c.id} />
+              <div onClick={(e) => e.stopPropagation()}>
+                <ThumbsRow digestId={digestId} section="commitments" itemRef={c.id} />
+              </div>
               <button
-                onClick={() => resolve(c.id, "dismissed")}
+                onClick={stop(() => resolve(c.id, "dismissed"))}
                 disabled={pending.has(c.id)}
                 title="Dismiss"
                 aria-label="Dismiss"
