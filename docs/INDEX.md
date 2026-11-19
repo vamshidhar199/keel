@@ -16,7 +16,7 @@ Start here. Each doc is self-contained but cross-links where useful.
 ## Billing & operations
 
 - **[api-keys-and-billing.md](./api-keys-and-billing.md)** — How LLM API keys are handled. `SHARED_KEY_MODE` (off / trial / org), user-key precedence, daily cost cap, the banner UX, the `/usage` dashboard, deployment scenarios.
-- **[deployment.md](./deployment.md)** — Operational: Railway deploy, env vars, cron config, migration step.
+- **[deployment.md](./deployment.md)** — Operational: Railway deploy, env vars, cron config, migration step. **§0 is the Railway-specific quickstart — read first if deploying to Railway**, since the platform's default `DATABASE_URL` is a superuser and bypasses RLS.
 
 ## Feature docs (intelligent surface)
 

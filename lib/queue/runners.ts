@@ -1,4 +1,4 @@
-import { syncGmail, syncSlack } from "../sync";
+import { syncGmail, syncSlack, syncSalesforce } from "../sync";
 import { processRawEvent } from "../pipeline";
 import { getMetaDb } from "../db";
 import { composeDigest, writeDigest } from "../digest";
@@ -19,6 +19,14 @@ export const runners: Record<string, Runner> = {
   sync_slack: async (p) => {
     const result = await syncSlack(p.userId);
     console.log(`[queue] sync_slack user=${p.userId} new=${result.newMessages}`);
+    if (result.newMessages > 0) {
+      await enqueue({ type: "extract_emails", userId: p.userId, limit: result.newMessages });
+    }
+  },
+
+  sync_salesforce: async (p) => {
+    const result = await syncSalesforce(p.userId);
+    console.log(`[queue] sync_salesforce user=${p.userId} new=${result.newMessages}`);
     if (result.newMessages > 0) {
       await enqueue({ type: "extract_emails", userId: p.userId, limit: result.newMessages });
     }

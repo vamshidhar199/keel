@@ -174,7 +174,7 @@ export interface SkillDraft {
   instructions: string;
 }
 
-const NL_GENERATOR_SYSTEM = `You convert natural-language "I want a skill that does X" requests into a Mettrie skill spec.
+const NL_GENERATOR_SYSTEM = `You convert natural-language "I want a skill that does X" requests into a Personal Agent skill spec.
 
 A skill is a named, reusable system-prompt addendum the user can invoke in chat.
 The instructions you produce will be injected on top of the default assistant

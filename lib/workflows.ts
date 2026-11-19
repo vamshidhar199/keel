@@ -925,7 +925,7 @@ function extractFirstJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-const NL_GENERATOR_SYSTEM = `You convert natural-language workflow requests into a Mettrie workflow spec.
+const NL_GENERATOR_SYSTEM = `You convert natural-language workflow requests into a Personal Agent workflow spec.
 
 Available cadences (use these EXACT keys):
 - "daily_8am": Every day at 8 AM

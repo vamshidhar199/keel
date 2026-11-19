@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mettrie local dev setup script
+# Personal Agent local dev setup script
 # Run from the repo root: bash setup.sh
 
 set -e
@@ -15,7 +15,7 @@ ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
 warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 
-echo -e "${BOLD}Mettrie — Local Dev Setup${NC}"
+echo -e "${BOLD}Personal Agent — Local Dev Setup${NC}"
 echo "────────────────────────────────────────"
 
 # ── 1. Check prerequisites ────────────────────────────────────────────────────

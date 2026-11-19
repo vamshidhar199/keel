@@ -1,6 +1,6 @@
 # File Uploads as a Source
 
-> Users drop in arbitrary documents (PDF, Word, Excel, CSV, TXT, MD) and Mettrie extracts entities + commitments + pages just like it would from an email.
+> Users drop in arbitrary documents (PDF, Word, Excel, CSV, TXT, MD) and Personal Agent extracts entities + commitments + pages just like it would from an email.
 > Status: shipped.
 
 ---
@@ -11,7 +11,7 @@ Gmail + Slack cover ongoing comms but miss everything else:
 - Resumes, contracts, design docs, meeting notes
 - Spreadsheets of contacts / deal trackers
 - Reading material in PDFs
-- Anything emailed AROUND Mettrie ("forward this to my Mettrie")
+- Anything emailed AROUND Personal Agent ("forward this to my Personal Agent")
 
 The pragmatic answer: let users drop files in directly. Make them land in the same extraction pipeline as emails so all downstream features (pages, brief, /ask, workflows, recipes) Just Work without per-source branching.
 

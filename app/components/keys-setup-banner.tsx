@@ -43,12 +43,12 @@ export async function KeysSetupBanner({ userId }: { userId: string }) {
     body =
       remaining < shared.capUsd * 0.2
         ? `Today's shared budget is almost out (about $${remaining.toFixed(2)} left). Add your own keys to keep working.`
-        : `Mettrie is running on a shared API budget. Add your own Anthropic + OpenAI keys when you're ready to use it for real.`;
+        : `Personal Agent is running on a shared API budget. Add your own Anthropic + OpenAI keys when you're ready to use it for real.`;
   } else if (bothMissing && !trialCovers) {
     tone = "red";
     title = shared.enabled
       ? "The free trial is fully booked"
-      : "Connect your API keys to use Mettrie";
+      : "Connect your API keys to use Personal Agent";
     body = shared.enabled
       ? "Today's shared budget is exhausted. Paste your own Anthropic + OpenAI keys in Settings to keep going."
       : "Paste your Anthropic + OpenAI keys in Settings → Developer. Nothing in the app will work without them.";

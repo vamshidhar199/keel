@@ -25,16 +25,16 @@ export function Sidebar({ email, name }: Props) {
     >
       {/* Logo */}
       <div className="px-3 py-6 flex items-center gap-3 shrink-0">
-        <Link href="/ask" className="block shrink-0" aria-label="Mettrie home">
+        <Link href="/ask" className="block shrink-0" aria-label="Personal Agent home">
           <span
-            className="inline-flex items-center justify-center w-10 h-10 rounded-xl text-[16px] font-extrabold"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-xl text-[14px] font-extrabold"
             style={{
               background: "var(--c-primary-m)",
               color: "var(--c-primary)",
               border: "1px solid var(--c-card-border)",
             }}
           >
-            M
+            PA
           </span>
         </Link>
         <span
@@ -42,7 +42,7 @@ export function Sidebar({ email, name }: Props) {
           style={{ backgroundImage: "var(--c-gradient)" }}
           aria-hidden
         >
-          Mettrie
+          Personal Agent
         </span>
       </div>
 

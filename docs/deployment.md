@@ -1,7 +1,108 @@
 # Deployment guide
 
-> **Audience:** anyone deploying Mettrie to a real environment (Railway, AWS, GCP, Azure, self-hosted). For local dev see `README.md`.
+> **Audience:** anyone deploying Personal Agent to a real environment (Railway, AWS, GCP, Azure, self-hosted). For local dev see `README.md`.
 > **Reflects:** the state of the codebase after at-rest encryption, Phase 1 (shared DB + RLS), and Phase 2 (Postgres-backed queue). Phases 3-5 are documented in their respective design docs but not yet implemented.
+
+> ⚠️ **If you're deploying to Railway, read §0 before anything else.** The Railway Postgres plugin's default `DATABASE_URL` is the `postgres` *superuser*. Wiring it straight into the app service bypasses RLS and silently leaks every user's data to every other user. §0 walks the safe path. Background: §1–§9.
+
+---
+
+## 0. Railway quickstart (do this BEFORE first deploy or right after, if you skipped it)
+
+The Railway Postgres plugin ships one user — `postgres`, a superuser with `BYPASSRLS=t`. Every tenant query in this codebase (`pages`, `commitments`, `digests`, etc.) has **no `WHERE user_id = …`** — it relies on Postgres RLS for isolation. RLS is silently skipped for superusers and `BYPASSRLS` roles even with `FORCE ROW LEVEL SECURITY`. So pointing the app at the default `postgres` user = full cross-tenant leak. You won't see an error; queries just return everyone's rows.
+
+The fix is to add a second, non-superuser role (`mettrie_app`) and route the app through that, keeping the `postgres` role exclusively for migrations.
+
+### 0.1 Create the `mettrie_app` role
+
+In Railway, open the **Postgres service → Data tab → Query**, then run **each statement separately** (Railway's Query tool auto-appends `LIMIT` and chokes on multi-statement DDL or any statement containing the word `SELECT`):
+
+```sql
+CREATE ROLE mettrie_app LOGIN PASSWORD '<paste-strong-pw>' NOSUPERUSER NOBYPASSRLS;
+```
+
+```sql
+GRANT CONNECT ON DATABASE railway TO mettrie_app;
+```
+
+```sql
+GRANT USAGE ON SCHEMA public TO mettrie_app;
+```
+
+```sql
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO mettrie_app;
+```
+
+```sql
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO mettrie_app;
+```
+
+```sql
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO mettrie_app;
+```
+
+```sql
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO mettrie_app;
+```
+
+> **Why `GRANT ALL PRIVILEGES` instead of `GRANT SELECT, INSERT, UPDATE, DELETE`?** Railway's Query tool sees the word `SELECT` inside the GRANT clause and auto-appends `LIMIT`, breaking the statement. `ALL PRIVILEGES` avoids the keyword. The extra rights (`TRUNCATE, REFERENCES, TRIGGER`) don't bypass RLS and are harmless. Alternative: run the whole block via `psql "$DATABASE_PUBLIC_URL"` from your laptop — no auto-LIMIT bug there.
+
+> **Password generation:** use `openssl rand -hex 24`. Hex-only avoids URL-encoding pain in `DATABASE_URL` (no `@ : / # ? & %` to escape). Save the password to a password manager *before* pasting into Railway — you'll need it again in step 0.3 and it's only shown once.
+
+### 0.2 Verify the role
+
+```sql
+SELECT rolname, rolsuper, rolbypassrls, rolcanlogin
+FROM pg_roles WHERE rolname = 'mettrie_app';
+```
+
+Required: `rolsuper = f`, `rolbypassrls = f`, `rolcanlogin = t`. If either of the first two is `t`, **stop** — re-run `ALTER ROLE mettrie_app NOSUPERUSER NOBYPASSRLS;` and re-verify. The leak isn't fixed until both are `f`.
+
+### 0.3 Wire the app service to the right variables
+
+On the **app service** (the Next.js one) → **Variables**:
+
+| Variable | Value | Notes |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://mettrie_app:<pw>@<host>:5432/railway` | The new non-superuser. **All request traffic uses this.** Same host/port/db as the Postgres service's auto-generated `DATABASE_URL`; only the user/password differ. |
+| `ADMIN_DATABASE_URL` | `postgresql://postgres:<pw>@<host>:5432/railway` | The original superuser string (what Railway gave you by default). Used **only** by `runMigrations()` at boot to `ENABLE ROW LEVEL SECURITY`, `CREATE EXTENSION vector`, etc. The `mettrie_app` role can't do those — deliberately. |
+
+Both vars must exist and point at different roles. If `ADMIN_DATABASE_URL` is unset, `lib/migrate.ts:476` falls back to `DATABASE_URL` (= `mettrie_app`), migrations fail with permission errors, RLS policies don't get refreshed on schema changes.
+
+If Railway shows `DATABASE_URL` as a reference like `${{Postgres.DATABASE_URL}}`, **overwrite with a literal string**. The reference will keep pointing at the superuser.
+
+### 0.4 Redeploy and verify in logs
+
+Saving env vars on Railway sometimes auto-deploys, sometimes not. Force one: **app service → Deployments → ⋯ → Redeploy**. Watch the deploy logs for:
+
+```
+[migrate] core schema ok
+[migrate] pgvector extension ok
+[migrate] tenant tables ok
+[migrate] RLS policies ok
+[migrate] mettrie_app grants ok
+```
+
+If you see `password authentication failed for user "mettrie_app"` → the password in `DATABASE_URL` is wrong (URL-encoding issue, or you copied the wrong one). If you see `permission denied … pages` → `mettrie_app` is missing grants; re-run §0.1's GRANT block. If you see `must be superuser … CREATE EXTENSION` → `ADMIN_DATABASE_URL` is missing or also pointing at `mettrie_app`.
+
+### 0.5 Two-browser cross-tenant test (non-negotiable)
+
+1. Sign in as user A in a normal window → visit `/pages`, `/overview`. Note what you see.
+2. Sign in as user B in an incognito window (different Google account) → visit `/pages`, `/overview`. **Must see only B's data, never A's.**
+
+If B sees any of A's rows: `DATABASE_URL` is still pointing at a superuser, or `mettrie_app` somehow has `BYPASSRLS=t`. Re-run §0.2's check. Don't accept users until this passes.
+
+### 0.6 Rotate any password that touched chat, screenshots, or notes
+
+Any password that appears in a Railway screenshot, a Slack message, a chat with an assistant, or an unencrypted notes file is **compromised** — assume it's leaked. Rotate by re-running step 0.1's `CREATE ROLE` as an `ALTER ROLE … PASSWORD …`, generate a fresh hex password, and update `DATABASE_URL` / `ADMIN_DATABASE_URL` on the app service.
+
+```sql
+ALTER ROLE mettrie_app WITH PASSWORD '<new-strong-pw>';
+-- and/or, if the postgres superuser password is also compromised:
+ALTER ROLE postgres WITH PASSWORD '<new-strong-pw>';
+```
+
+After rotating `postgres`, you must also update any other Railway service that references it (the Postgres plugin's own internal variable, plus your app's `ADMIN_DATABASE_URL`).
 
 ---
 
@@ -298,6 +399,9 @@ GROUP BY payload->>'userId', type ORDER BY completed_24h DESC;
 
 ### Railway
 
+- ⚠️ **Two-role setup is mandatory** — see §0 above. The default `DATABASE_URL` Railway provides is the `postgres` superuser; using it for the app silently breaks RLS. Create `mettrie_app` (§0.1) and wire it through `DATABASE_URL`; keep `postgres` exclusively in `ADMIN_DATABASE_URL`.
+- ⚠️ **Railway Query tab auto-appends `LIMIT`** to anything containing the word `SELECT`. Run DDL one statement at a time, use `GRANT ALL PRIVILEGES` instead of `GRANT SELECT, …`, or shell into `psql "$DATABASE_PUBLIC_URL"` from your laptop.
+- ⚠️ **Passwords in screenshots/chat are leaked.** Generate with `openssl rand -hex 24` (no URL-special chars). If you must screenshot the Variables tab, blur the value before sharing. Rotate immediately if exposed (§0.6).
 - Default Postgres plugin is direct (no pgBouncer). pgvector available on `pgvector/pgvector:pg16` template.
 - Cron: `railway.toml` (both required):
   ```toml
