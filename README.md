@@ -146,7 +146,7 @@ Deeper write-ups live in [`docs/`](./docs/INDEX.md), including an ADR-style
 credentials for Google (plus Slack or Salesforce if you want those sources). You'll also need Anthropic and OpenAI API keys.
 
 ```bash
-git clone https://github.com/vamshidhar199/mettrie.git keel
+git clone https://github.com/vamshidhar199/keel.git keel
 cd keel
 bash setup.sh          # starts Postgres + pgvector in Docker, creates the app DB role, writes .env.local
 # fill in OAuth + API keys in .env.local

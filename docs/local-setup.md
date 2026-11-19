@@ -68,7 +68,7 @@ You should see `mettrie-postgres` in the list.
 ## Step 3 — Clone this repo and install dependencies
 
 ```bash
-git clone https://github.com/vamshidhar199/mettrie.git keel
+git clone https://github.com/vamshidhar199/keel.git keel
 cd keel
 bun install
 ```
