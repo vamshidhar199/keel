@@ -498,6 +498,14 @@ CREATE POLICY skills_isolation ON skills
   WITH CHECK  (user_id = current_setting('app.user_id')::uuid);
 `;
 
+// Per-user Salesforce Connected App credentials. Each customer admin creates
+// their own Connected App in their Salesforce org, pastes Consumer Key/Secret
+// into the Keel UI on first connect. Encrypted at rest via lib/crypto.
+const SCHEMA_SALESFORCE_APP_CREDS = `
+ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS salesforce_consumer_key TEXT;
+ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS salesforce_consumer_secret TEXT;
+`;
+
 export async function runMigrations(): Promise<void> {
   // Prefer ADMIN_DATABASE_URL (superuser) for CREATE EXTENSION and role grants.
   // Fall back to DATABASE_URL for local dev where ADMIN_DATABASE_URL is not yet set.
@@ -609,6 +617,14 @@ export async function runMigrations(): Promise<void> {
     console.log("[migrate] commitment_entities schema ok");
   } catch (err) {
     console.error("[migrate] commitment_entities schema failed:", (err as Error).message);
+  }
+
+  // Step 8h: per-user Salesforce Connected App credentials.
+  try {
+    await db.query(SCHEMA_SALESFORCE_APP_CREDS);
+    console.log("[migrate] salesforce_app_creds schema ok");
+  } catch (err) {
+    console.error("[migrate] salesforce_app_creds schema failed:", (err as Error).message);
   }
 
   // Step 9 (final): grant app role on all tables. Must run after every CREATE TABLE

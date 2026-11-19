@@ -1,10 +1,12 @@
 import { auth } from "@/auth";
 import { hasGmailScope } from "@/lib/gmail";
 import { hasSlackConnected } from "@/lib/slack";
-import { getGmailStatus, getSlackStatus } from "@/lib/sync";
+import { hasSalesforceConnected, hasSalesforceAppCreds } from "@/lib/salesforce";
+import { getGmailStatus, getSlackStatus, getSalesforceStatus } from "@/lib/sync";
 import { getExtractionStatus } from "@/lib/pipeline";
 import { GmailPanel } from "../../gmail-panel";
 import { SlackPanel } from "../../slack-panel";
+import { SalesforcePanel } from "../../salesforce-panel";
 import { ExtractionPanel } from "../../extraction-panel";
 import { FilesPanel } from "../../files-panel";
 
@@ -12,19 +14,24 @@ export default async function SourcesPage() {
   const session = await auth();
   const userId = session!.user!.id;
 
-  const [gmailConnected, slackConnected, extractionStatus] = await Promise.all([
+  const [gmailConnected, slackConnected, salesforceConnected, salesforceHasCreds, extractionStatus] = await Promise.all([
     hasGmailScope(userId),
     hasSlackConnected(userId),
+    hasSalesforceConnected(userId),
+    hasSalesforceAppCreds(userId),
     getExtractionStatus(userId),
   ]);
 
-  const [gmailStatus, slackStatus] = await Promise.all([
+  const [gmailStatus, slackStatus, salesforceStatus] = await Promise.all([
     gmailConnected
       ? getGmailStatus(userId)
       : { connected: false, lastSyncedAt: null, nextSyncAt: null, messageCount: 0, syncIntervalHours: 24 },
     slackConnected
       ? getSlackStatus(userId)
       : { connected: false, teamName: null, lastSyncedAt: null, nextSyncAt: null, messageCount: 0, syncIntervalHours: 24 },
+    salesforceConnected
+      ? getSalesforceStatus(userId)
+      : { connected: false, instanceLabel: null, lastSyncedAt: null, nextSyncAt: null, recordCount: 0, syncIntervalHours: 24 },
   ]);
 
   return (
@@ -62,6 +69,15 @@ export default async function SourcesPage() {
               nextSyncAt={slackStatus.nextSyncAt ?? null}
               messageCount={slackStatus.messageCount}
               syncIntervalHours={slackStatus.syncIntervalHours}
+            />
+            <SalesforcePanel
+              connected={salesforceConnected}
+              hasSavedCreds={salesforceHasCreds}
+              instanceLabel={salesforceStatus.instanceLabel ?? null}
+              lastSyncedAt={salesforceStatus.lastSyncedAt}
+              nextSyncAt={salesforceStatus.nextSyncAt ?? null}
+              recordCount={salesforceStatus.recordCount}
+              syncIntervalHours={salesforceStatus.syncIntervalHours}
             />
             <FilesPanel />
           </div>

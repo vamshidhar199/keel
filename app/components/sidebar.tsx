@@ -25,7 +25,7 @@ export function Sidebar({ email, name }: Props) {
     >
       {/* Logo */}
       <div className="px-3 py-6 flex items-center gap-3 shrink-0">
-        <Link href="/ask" className="block shrink-0" aria-label="Mettrie home">
+        <Link href="/ask" className="block shrink-0" aria-label="Keel home">
           <span
             className="inline-flex items-center justify-center w-10 h-10 rounded-xl text-[16px] font-extrabold"
             style={{
@@ -34,7 +34,7 @@ export function Sidebar({ email, name }: Props) {
               border: "1px solid var(--c-card-border)",
             }}
           >
-            M
+            K
           </span>
         </Link>
         <span
@@ -42,7 +42,7 @@ export function Sidebar({ email, name }: Props) {
           style={{ backgroundImage: "var(--c-gradient)" }}
           aria-hidden
         >
-          Mettrie
+          Keel
         </span>
       </div>
 

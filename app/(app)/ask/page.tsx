@@ -95,7 +95,7 @@ export default async function AskPage() {
         ],
         {
           system:
-            "You are Mettrie, a personal knowledge system. You speak in first person. You are observant and direct — never sycophantic. Brevity over completeness.",
+            "You are Keel, the user's personal knowledge system. You speak in first person. You are observant and direct — never sycophantic. Brevity over completeness.",
           maxTokens: 120,
         }
       );
@@ -129,7 +129,7 @@ Bad examples (speculative or generic): ["How does X compare to Y?", "Is A connec
         ],
         {
           system:
-            "You are Mettrie. Generate questions strictly grounded in the user's actual data. Never speculate about connections between entities. Output ONLY a JSON array — no other text.",
+            "You are Keel. Generate questions strictly grounded in the user's actual data. Never speculate about connections between entities. Output ONLY a JSON array — no other text.",
           maxTokens: 200,
         }
       );

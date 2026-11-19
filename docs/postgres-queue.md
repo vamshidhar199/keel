@@ -9,7 +9,7 @@
 
 ## 1. Why this change
 
-Today `lib/queue.ts:22` is an in-memory `Job[]` array drained by a single async loop. This breaks in three ways the moment Mettrie has more than one user or one container:
+Today `lib/queue.ts:22` is an in-memory `Job[]` array drained by a single async loop. This breaks in three ways the moment Keel has more than one user or one container:
 
 1. **Jobs vanish on restart / deploy.** Only `resetStuckJobs()` partially recovers (re-marks `processing → pending` in `raw_events`, but never recovers the queued job itself).
 2. **Single-instance only.** Two Next.js instances would have separate queues with no coordination — the same `sync_gmail` for the same user could run twice in parallel and corrupt state.

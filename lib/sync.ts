@@ -6,6 +6,13 @@ import {
   resolveUserNames,
   getTeamName,
 } from "./slack";
+import {
+  listAccounts,
+  listContacts,
+  getInstanceUrl,
+  type SalesforceAccountRecord,
+  type SalesforceContactRecord,
+} from "./salesforce";
 import { encrypt, encryptJson } from "./crypto";
 
 const MAX_INITIAL_PAGES = 3;
@@ -215,6 +222,9 @@ export async function schedulerTick(): Promise<void> {
     } else if (source === "slack") {
       console.log(`[scheduler] enqueueing sync_slack for user ${user_id}`);
       await enqueue({ type: "sync_slack", userId: user_id });
+    } else if (source === "salesforce") {
+      console.log(`[scheduler] enqueueing sync_salesforce for user ${user_id}`);
+      await enqueue({ type: "sync_salesforce", userId: user_id });
     }
   }
 
@@ -385,6 +395,156 @@ export async function getSlackStatus(userId: string): Promise<SlackStatus> {
     lastSyncedAt,
     nextSyncAt,
     messageCount: parseInt(countRes.rows[0]?.cnt ?? "0", 10),
+    syncIntervalHours,
+  };
+}
+
+// ── Salesforce ─────────────────────────────────────────────────────────────
+
+function serializeAccount(a: SalesforceAccountRecord): string {
+  const lines: string[] = [];
+  if (a.Name) lines.push(`Name: ${a.Name}`);
+  if (a.Industry) lines.push(`Industry: ${a.Industry}`);
+  if (a.Phone) lines.push(`Phone: ${a.Phone}`);
+  if (a.Website) lines.push(`Website: ${a.Website}`);
+  if (a.BillingCity) lines.push(`City: ${a.BillingCity}`);
+  if (a.BillingCountry) lines.push(`Country: ${a.BillingCountry}`);
+  if (a.Description) lines.push(`Description: ${a.Description}`);
+  return lines.join("\n");
+}
+
+function serializeContact(c: SalesforceContactRecord): string {
+  const lines: string[] = [];
+  const name = `${c.FirstName ?? ""} ${c.LastName ?? ""}`.trim();
+  if (name) lines.push(`Name: ${name}`);
+  if (c.Title) lines.push(`Title: ${c.Title}`);
+  if (c.Email) lines.push(`Email: ${c.Email}`);
+  if (c.Phone) lines.push(`Phone: ${c.Phone}`);
+  if (c.Account?.Name) lines.push(`Account: ${c.Account.Name}`);
+  if (c.Description) lines.push(`Description: ${c.Description}`);
+  return lines.join("\n");
+}
+
+export async function syncSalesforce(userId: string): Promise<SyncResult> {
+  const db = getMetaDb();
+
+  const { rows } = await db.query(
+    `SELECT cursor FROM sync_cursors WHERE user_id = $1 AND source = 'salesforce'`,
+    [userId]
+  );
+  // Cursor is the highest LastModifiedDate seen (ISO string). Initial sync
+  // pulls the last 30 days to match the Slack behavior.
+  const cursorIso: string =
+    rows[0]?.cursor && rows[0].cursor.length > 0
+      ? rows[0].cursor
+      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [accounts, contacts] = await Promise.all([
+    listAccounts(userId, cursorIso),
+    listContacts(userId, cursorIso),
+  ]);
+
+  let newMessages = 0;
+  let maxModified = cursorIso;
+
+  for (const a of accounts) {
+    const result = await db.query(
+      `INSERT INTO raw_events
+         (user_id, source, source_ref, subject, from_addr, date_sent, body_text, raw_json, thread_ref, is_from_user)
+       VALUES ($1, 'salesforce', $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (user_id, source, source_ref) DO NOTHING`,
+      [
+        userId,
+        `account:${a.Id}`,
+        encrypt(a.Name ?? ""),
+        encrypt(a.Website ?? ""),
+        new Date(a.LastModifiedDate),
+        encrypt(serializeAccount(a)),
+        encryptJson(a),
+        null,
+        false,
+      ]
+    );
+    if (result.rowCount && result.rowCount > 0) newMessages++;
+    if (a.LastModifiedDate > maxModified) maxModified = a.LastModifiedDate;
+  }
+
+  for (const c of contacts) {
+    const fullName = `${c.FirstName ?? ""} ${c.LastName ?? ""}`.trim();
+    const result = await db.query(
+      `INSERT INTO raw_events
+         (user_id, source, source_ref, subject, from_addr, date_sent, body_text, raw_json, thread_ref, is_from_user)
+       VALUES ($1, 'salesforce', $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (user_id, source, source_ref) DO NOTHING`,
+      [
+        userId,
+        `contact:${c.Id}`,
+        encrypt(fullName),
+        encrypt(c.Email ?? ""),
+        new Date(c.LastModifiedDate),
+        encrypt(serializeContact(c)),
+        encryptJson(c),
+        c.AccountId ?? null,
+        false,
+      ]
+    );
+    if (result.rowCount && result.rowCount > 0) newMessages++;
+    if (c.LastModifiedDate > maxModified) maxModified = c.LastModifiedDate;
+  }
+
+  await db.query(
+    `INSERT INTO sync_cursors (user_id, source, cursor, last_synced_at)
+     VALUES ($1, 'salesforce', $2, now())
+     ON CONFLICT (user_id, source)
+     DO UPDATE SET cursor = EXCLUDED.cursor, last_synced_at = now()`,
+    [userId, maxModified]
+  );
+
+  return { newMessages, source: "salesforce" };
+}
+
+export interface SalesforceStatus {
+  connected: boolean;
+  instanceLabel: string | null;
+  lastSyncedAt: string | null;
+  nextSyncAt: string | null;
+  recordCount: number;
+  syncIntervalHours: number;
+}
+
+export async function getSalesforceStatus(userId: string): Promise<SalesforceStatus> {
+  const db = getMetaDb();
+
+  const [cursorRes, countRes, instanceUrl] = await Promise.all([
+    db.query(
+      `SELECT last_synced_at, sync_interval_hours FROM sync_cursors
+       WHERE user_id = $1 AND source = 'salesforce'`,
+      [userId]
+    ),
+    db.query(
+      `SELECT COUNT(*) AS cnt FROM raw_events WHERE user_id = $1 AND source = 'salesforce'`,
+      [userId]
+    ),
+    getInstanceUrl(userId),
+  ]);
+
+  const row = cursorRes.rows[0];
+  const syncIntervalHours: number = row?.sync_interval_hours ?? 24;
+  const lastSyncedAt: string | null = row?.last_synced_at?.toISOString() ?? null;
+
+  let nextSyncAt: string | null = null;
+  if (lastSyncedAt) {
+    const next = new Date(lastSyncedAt);
+    next.setHours(next.getHours() + syncIntervalHours);
+    nextSyncAt = next.toISOString();
+  }
+
+  return {
+    connected: true,
+    instanceLabel: instanceUrl ? instanceUrl.replace(/^https?:\/\//, "") : null,
+    lastSyncedAt,
+    nextSyncAt,
+    recordCount: parseInt(countRes.rows[0]?.cnt ?? "0", 10),
     syncIntervalHours,
   };
 }

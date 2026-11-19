@@ -16,7 +16,7 @@ export default async function Home() {
             className="text-4xl font-bold bg-clip-text text-transparent"
             style={{ backgroundImage: "var(--c-gradient)" }}
           >
-            Mettrie
+            Keel
           </h1>
           <p className="text-sm mt-2 tracking-wide" style={{ color: "var(--c-subtle)" }}>
             Your self-improving knowledge system
