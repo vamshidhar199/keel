@@ -2,7 +2,7 @@
 //
 // Two problems with the naive `https://mail.google.com/mail/u/0/#inbox/<id>`:
 //   1. `u/0` = "first signed-in account in this browser session", which is NOT
-//      necessarily the Personal Agent user's Google account if they have multiple
+//      necessarily the Keel user's Google account if they have multiple
 //      Gmail tabs open. Use `authuser=<email>` instead — Gmail resolves it
 //      to the correct account by email.
 //   2. `#inbox/<id>` only finds the thread if it currently sits in Inbox.

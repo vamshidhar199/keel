@@ -500,7 +500,7 @@ CREATE POLICY skills_isolation ON skills
 
 // Per-user Salesforce Connected App credentials. Each customer admin creates
 // their own Connected App in their Salesforce org, pastes Consumer Key/Secret
-// into the Personal Agent UI on first connect. Encrypted at rest via lib/crypto.
+// into the Keel UI on first connect. Encrypted at rest via lib/crypto.
 const SCHEMA_SALESFORCE_APP_CREDS = `
 ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS salesforce_consumer_key TEXT;
 ALTER TABLE user_api_keys ADD COLUMN IF NOT EXISTS salesforce_consumer_secret TEXT;

@@ -263,7 +263,7 @@ export default async function AskPage() {
         HAIKU,
         [{ role: "user", content: `Pages updated in the last 24 hours:\n${context}\n\nWrite exactly 2 sentences about what you notice. Start with "I noticed" or "I've been watching" or similar. Be specific — name topics, people, or themes. Do not use words like "great", "amazing", or "excited".` }],
         {
-          system: "You are Personal Agent, a personal knowledge system. You speak in first person. You are observant and direct — never sycophantic.",
+          system: "You are Keel, a personal knowledge system. You speak in first person. You are observant and direct — never sycophantic.",
           maxTokens: 150,
         }
       );
@@ -274,7 +274,7 @@ export default async function AskPage() {
         HAIKU,
         [{ role: "user", content: `The 5 most recent pages in this user's knowledge base:\n${pageList}\n\nReturn a JSON array of exactly 3 questions the user would want to ask about their own data today. Be specific to this content. Return only valid JSON — no preamble.\n\nExample: ["Who has been most active in my inbox?", "What's the status of Project X?", "What needs my reply today?"]` }],
         {
-          system: "You are Personal Agent, a personal knowledge system. Generate timely, specific questions a user would ask about their own data.",
+          system: "You are Keel, a personal knowledge system. Generate timely, specific questions a user would ask about their own data.",
           maxTokens: 300,
         }
       );

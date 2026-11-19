@@ -1,13 +1,13 @@
 # API Keys & Billing
 
-> How Personal Agent handles LLM API keys — who pays, when, and how to deploy for solo / company / public launch scenarios.
+> How Keel handles LLM API keys — who pays, when, and how to deploy for solo / company / public launch scenarios.
 > See also: [`design-decisions.md`](./design-decisions.md) DD-4 for the rationale.
 
 ---
 
 ## The contract
 
-Personal Agent needs two API keys to function:
+Keel needs two API keys to function:
 - **Anthropic** — for Haiku (extraction, recipes, NL drafters) and Sonnet (page composition, /ask synthesis, NL generators)
 - **OpenAI** — for embeddings (`text-embedding-3-large` → pgvector content_chunks)
 

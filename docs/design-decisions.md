@@ -239,7 +239,7 @@ User's own key always wins when configured. Default: `trial` in dev, `off` in pr
 
 **Why:**
 - All four leverage the same primitive (text → prompt) so we don't need separate fine-tuning, separate prompt-engineering surfaces, or vector stores per preference.
-- Lets users teach Personal Agent incrementally instead of getting a one-shot model.
+- Lets users teach Keel incrementally instead of getting a one-shot model.
 
 **Tradeoffs:**
 - Costs more tokens per call (memories block is prepended to every greeting + recipe execution).

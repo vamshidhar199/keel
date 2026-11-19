@@ -1,6 +1,6 @@
 # Deployment guide
 
-> **Audience:** anyone deploying Personal Agent to a real environment (Railway, AWS, GCP, Azure, self-hosted). For local dev see `README.md`.
+> **Audience:** anyone deploying Keel to a real environment (Railway, AWS, GCP, Azure, self-hosted). For local dev see `README.md`.
 > **Reflects:** the state of the codebase after at-rest encryption, Phase 1 (shared DB + RLS), and Phase 2 (Postgres-backed queue). Phases 3-5 are documented in their respective design docs but not yet implemented.
 
 > ⚠️ **If you're deploying to Railway, read §0 before anything else.** The Railway Postgres plugin's default `DATABASE_URL` is the `postgres` *superuser*. Wiring it straight into the app service bypasses RLS and silently leaks every user's data to every other user. §0 walks the safe path. Background: §1–§9.

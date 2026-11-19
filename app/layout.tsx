@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Personal Agent",
+  title: "Keel",
   description: "Your self-improving knowledge system",
 };
 

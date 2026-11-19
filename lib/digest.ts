@@ -310,7 +310,7 @@ async function generateGreeting(
     .join(", ");
 
   const system =
-    "You are Personal Agent, the user's personal knowledge assistant. Observant, direct, never sycophantic." +
+    "You are Keel, the user's personal knowledge assistant. Observant, direct, never sycophantic." +
     (memoriesBlock ? `\n\n${memoriesBlock}` : "");
 
   try {
@@ -440,7 +440,7 @@ export async function runRecipe(
     .join("\n");
 
   const system =
-    "You are Personal Agent's recipe filter. Pick at most 5 candidates that match the user's natural-language rule. Return STRICT JSON: an array of {ref, label, why}. label = a short headline (<=80 chars). why = one short clause (<=80 chars) explaining the match. If nothing matches, return [].";
+    "You are Keel's recipe filter. Pick at most 5 candidates that match the user's natural-language rule. Return STRICT JSON: an array of {ref, label, why}. label = a short headline (<=80 chars). why = one short clause (<=80 chars) explaining the match. If nothing matches, return [].";
 
   const user = `${memoriesBlock ? memoriesBlock + "\n\n" : ""}<rule name="${recipe.name}">
 ${recipe.nl_rule}

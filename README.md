@@ -1,4 +1,4 @@
-# Personal Agent — Local Development Setup
+# Keel — Local Development Setup
 
 A self-improving personal knowledge system that extracts structured knowledge from Gmail and Slack and lets you query it conversationally.
 
@@ -99,7 +99,7 @@ bun install
 ## Step 5 — Set up Slack OAuth
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App → From scratch**
-   - Name: `Personal Agent Dev`
+   - Name: `Keel Dev`
    - Workspace: pick a workspace you own (create a free one at slack.com/get-started if needed)
 2. Go to **OAuth & Permissions → User Token Scopes** → add each scope:
    ```

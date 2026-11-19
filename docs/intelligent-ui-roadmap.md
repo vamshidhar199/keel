@@ -1,7 +1,7 @@
 # Intelligent UI + Workflows Roadmap
 
 > **Status:** product roadmap, not implementation-ready specs. Each tier needs a real design doc before Sonnet can build it.
-> **Why this exists:** today Personal Agent *feels like a dashboard, not a brain*. This doc captures the prioritized list of what to change to fix that, plus the bigger product bet on user-creatable workflows.
+> **Why this exists:** today Keel *feels like a dashboard, not a brain*. This doc captures the prioritized list of what to change to fix that, plus the bigger product bet on user-creatable workflows.
 > **Already shipped (foundation):** at-rest encryption, Phase 1 (shared DB + RLS), Phase 2 (Postgres-backed queue), **Tier 1** (landing/opener/suggestions/admin-surface moves/copy), the **streaming `/api/query` + react-markdown** pipeline, and **Tier 2 in-app daily brief** (proactive bento hub on `/overview` + open commitments tracker). See `docs/tier-1-intelligent-ui.md` and `docs/tier-2-digests.md` for what landed.
 
 ---
@@ -83,7 +83,7 @@ For the v1 in-app digest, the prompt should produce sections like:
 
 ## Tier 3 — user-creatable workflows
 
-**The real product differentiator.** This is what makes Personal Agent *uniquely* powerful vs. another AI inbox tool. The model: **trigger + filter + prompt + delivery**, all describable in natural language.
+**The real product differentiator.** This is what makes Keel *uniquely* powerful vs. another AI inbox tool. The model: **trigger + filter + prompt + delivery**, all describable in natural language.
 
 **User explicitly asked for this** during Tier 2 review — "users ability to create his own digests should also be provided." Once shipped, the proactive-card backlog in `docs/tier-2-digests.md` ("Future card ideas") becomes a library of workflow templates rather than one-off UI work. Recommended sequence: ship Tier 2 delivery (PRs 3-4) → ship Tier 3 with 3-5 hard-coded templates → add the NL workflow generator.
 
@@ -167,7 +167,7 @@ System:
 
 ### Why this is huge
 
-Personal Agent shifts from "a brain that lists things" to "a brain that *acts on your behalf on a schedule*." That's the Claude Cowork / Custom GPTs analogy — but tied to *your* actual data, not a generic chatbot.
+Keel shifts from "a brain that lists things" to "a brain that *acts on your behalf on a schedule*." That's the Claude Cowork / Custom GPTs analogy — but tied to *your* actual data, not a generic chatbot.
 
 ---
 
@@ -200,7 +200,7 @@ None of these matter until Tiers 1-3 are real. Capture here so they're not forgo
 
 ## Three product questions to think about before Tier 3
 
-Workflows fundamentally change Personal Agent from a *passive index* to an *active agent on your behalf*. That changes the trust contract: today the brain "knows" things; tomorrow it'll *act* (send messages, deliver digests on schedule). Things to settle before shipping:
+Workflows fundamentally change Keel from a *passive index* to an *active agent on your behalf*. That changes the trust contract: today the brain "knows" things; tomorrow it'll *act* (send messages, deliver digests on schedule). Things to settle before shipping:
 
 1. **Visibility / undo.** Can users see exactly what the brain sent on their behalf yesterday? Recommendation: yes — `workflow_runs` table is the audit log; show it in the workflow detail view.
 2. **Failure mode.** What happens when a workflow runs and Claude returns garbage? Recommendation: first 3 runs of every new workflow are "preview" mode — content goes to the in-app digest only, not email/Slack. User explicitly enables external delivery once they're confident in the output.

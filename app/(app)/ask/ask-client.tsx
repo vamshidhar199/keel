@@ -260,7 +260,7 @@ export function AskClient({ opener, suggestions, skills }: AskClientProps) {
               >
                 <AvatarMark />
                 <span className="text-[13px] font-semibold" style={{ color: "var(--c-fg)" }}>
-                  Personal Agent
+                  Keel
                 </span>
                 <span className="text-[11px]" style={{ color: "var(--c-subtle)" }}>
                   {dateStr ? `· ${dateStr}` : "· today"}
@@ -369,7 +369,7 @@ export function AskClient({ opener, suggestions, skills }: AskClientProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={inConversation ? "Ask a follow-up…" : "Reply to Personal Agent…"}
+            placeholder={inConversation ? "Ask a follow-up…" : "Reply to Keel…"}
             disabled={loading}
             rows={1}
             autoFocus
@@ -391,7 +391,7 @@ export function AskClient({ opener, suggestions, skills }: AskClientProps) {
           </button>
         </form>
         <p className="text-center text-[11px] mt-2.5 tracking-wide" style={{ color: "var(--c-subtle)" }}>
-          Personal Agent may be wrong. Verify before acting on anything that matters.
+          Keel may be wrong. Verify before acting on anything that matters.
         </p>
       </div>
     </div>
@@ -473,7 +473,7 @@ function StreamingTurn({ streaming }: { streaming: StreamingState }) {
       <div className="flex items-center gap-2.5 px-1">
         <AvatarMark />
         <span className="text-[13px] font-semibold" style={{ color: "var(--c-fg)" }}>
-          Personal Agent
+          Keel
         </span>
       </div>
       {streaming.content ? (
@@ -494,7 +494,7 @@ function AssistantTurn({ message }: { message: AssistantMessage }) {
       <div className="flex items-center gap-2.5 px-1">
         <AvatarMark />
         <span className="text-[13px] font-semibold" style={{ color: "var(--c-fg)" }}>
-          Personal Agent
+          Keel
         </span>
       </div>
 
