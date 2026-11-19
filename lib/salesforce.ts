@@ -4,7 +4,7 @@ import { encrypt, decrypt } from "./crypto";
 // ── Per-user Connected App credentials ────────────────────────────────────
 //
 // Each customer admin creates a Connected App in their own Salesforce org and
-// pastes the Consumer Key/Secret into Mettrie at first connect. These live
+// pastes the Consumer Key/Secret into Keel at first connect. These live
 // in user_api_keys (encrypted) and back every OAuth round-trip.
 
 export interface SalesforceAppCreds {

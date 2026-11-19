@@ -1,333 +1,223 @@
-# Keel — Local Development Setup
+<div align="center">
 
-A self-improving personal knowledge system that extracts structured knowledge from Gmail and Slack and lets you query it conversationally.
+# ⚓ Keel
 
-> **Looking for product / architecture docs?** Start at **[`docs/INDEX.md`](./docs/INDEX.md)** — a guided table of contents covering design decisions, every feature, the billing/API-key system, deployment, and the roadmap.
+**Your work life, kept steady.**
+
+Keel connects to Gmail, Slack, Salesforce, and your files, turns the noise into a structured personal knowledge graph,
+and keeps track of every promise you've made — so nothing slips.
+
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
+[![React 19](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![PostgreSQL + pgvector](https://img.shields.io/badge/Postgres-pgvector-336791?logo=postgresql&logoColor=white)](https://github.com/pgvector/pgvector)
+[![Claude](https://img.shields.io/badge/LLM-Claude-d97757)](https://www.anthropic.com)
+[![Bun](https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh)
+
+</div>
 
 ---
 
-## What you need
+## Why Keel?
 
-| Tool | Purpose |
+Important context is scattered across inboxes, channels, and CRMs. You promise someone a follow-up in a Slack thread,
+a customer asks for something in an email, a deal moves in Salesforce, and by Friday half of it is forgotten.
+
+Keel reads those sources, extracts the **people, companies, projects, and commitments** inside them, and gives you:
+
+- a **conversational assistant** that answers questions about *your* world, with citations back to the original message
+- a **proactive daily brief** that tells you what's due, who's waiting on you, and what's gone quiet
+- **automations you describe in plain English** ("every Monday, summarize open customer escalations")
+
+A keel keeps a ship steady and on course. That's the job.
+
+---
+
+## Features
+
+### 💬 Ask — grounded conversational search
+- Streaming answers synthesized by Claude over a **pgvector** semantic index of everything you've synced
+- Every claim is **cited** to the source email, Slack message, or document; invalid citations are detected and flagged
+- Optional **web search** (Tavily) blended in when your own data isn't enough
+- Dynamic openers and follow-up suggestions generated strictly from your data
+
+### 🧠 Knowledge graph
+- An LLM extraction pipeline turns raw messages into typed **pages** (person, company, project, …) with links between them
+- Interactive **force-directed graph** to explore how people, threads, and projects connect
+- Browse and edit every extracted page
+
+### ✅ Promise tracking
+- Detects **commitments** you've made ("I'll send the deck Thursday") and requests waiting on you
+- Deduplicates repeated promises across sources and shows a detail drawer with the originating thread
+- Mark done / dismiss; status feeds back into the daily brief
+
+### 🌅 Proactive daily brief
+- A bento-style overview: *Today's promises · Awaiting your reply · Active threads · Quiet but important*
+- Generated on a schedule at the hour you choose, with a 30-day history of past briefs
+- Thumbs-up/down feedback adapts what the brief surfaces
+
+### ⚙️ Workflows & skills you write in English
+- **Workflows**: scheduled AI agents with a trigger (cron preset or custom), a natural-language filter, and an action.
+  Describe it in a sentence and an LLM drafts the full spec for you.
+- **Skills**: reusable prompts you invoke in Ask with `/slash` autocomplete
+
+### 🔌 Sources
+| Source | How it connects |
 |---|---|
-| [Bun](https://bun.sh) | JavaScript runtime + package manager (replaces Node/npm) |
-| [Colima](https://github.com/abiosoft/colima) + Docker CLI | Runs PostgreSQL locally in a container |
-| Google Cloud project | OAuth for sign-in + Gmail API access |
-| Slack App | OAuth for Slack workspace access |
-| Anthropic API key | Claude for extraction and answer synthesis |
-| OpenAI API key | Embeddings for semantic search (text-embedding-3-large) |
+| **Gmail** | Google OAuth (read-only scope), incremental sync |
+| **Slack** | User-token OAuth across channels, DMs, and group DMs |
+| **Salesforce** | Per-user Connected App OAuth; syncs Accounts, Contacts, and Cases |
+| **Files** | Upload PDF, DOCX, XLSX, CSV, or text, parsed into the same pipeline |
+
+### 💳 Bring-your-own-key billing
+- Users can run on a shared trial budget or plug in their own Anthropic and OpenAI keys
+- Per-user daily cost cap and a `/usage` dashboard showing spend by feature
 
 ---
 
-## Step 1 — Install system dependencies
+## Architecture
 
-### Bun
-```bash
-curl -fsSL https://bun.sh/install | bash
-```
-Restart your terminal, then verify:
-```bash
-bun --version
+```mermaid
+flowchart LR
+    subgraph Sources
+        G[Gmail]
+        S[Slack]
+        SF[Salesforce]
+        F[File uploads]
+    end
+
+    subgraph Keel["Keel (Next.js 16 on Bun)"]
+        SYNC[Sync jobs]
+        Q[(Postgres job queue<br/>FOR UPDATE SKIP LOCKED)]
+        EX[Extraction<br/>Claude Haiku]
+        EMB[Embeddings<br/>OpenAI]
+        SYN[Answer synthesis<br/>Claude Sonnet]
+        UI[Ask · Overview · Graph<br/>Workflows · Skills]
+    end
+
+    DB[(PostgreSQL + pgvector<br/>Row-Level Security)]
+    CRON[Railway cron] -->|drain / scheduler tick| Q
+
+    G & S & SF & F --> SYNC --> Q --> EX --> EMB --> DB
+    UI -->|query| SYN --> DB
 ```
 
-### Colima + Docker CLI (macOS)
-```bash
-brew install colima docker docker-compose
-```
+### Engineering highlights
 
-### PostgreSQL client (for debugging, optional)
-```bash
-brew install postgresql
-```
+- **Multi-tenant isolation with Postgres Row-Level Security.** All tenant data lives in one database, and RLS policies on
+  every table are the security wall. Each request runs inside `withUser()`, which sets `app.user_id` for the transaction
+  under a non-superuser, `NOBYPASSRLS` role. A custom lint rule (`bun run lint:rls`) fails the build if any code touches
+  tenant tables outside the approved modules, and a dedicated test suite verifies cross-user isolation.
+- **Encryption at rest.** OAuth tokens, user API keys, and raw email and Slack content are encrypted with AES-256-GCM before
+  they hit the database.
+- **No-infra job queue.** Background work (syncs, extraction, digests, workflow runs) uses a Postgres-backed queue with
+  `SELECT … FOR UPDATE SKIP LOCKED`, per-user concurrency caps, retries with backoff, and a stale-job reaper. No Redis,
+  no separate broker.
+- **Cost-aware LLM routing.** Cheap, high-volume extraction runs on Claude Haiku; user-facing synthesis runs on Claude Sonnet.
+  Rate-limit handling, prompt trimming, and dedup keep spend predictable.
+- **Grounded generation.** Prompts force answers to cite retrieved chunks, and citations are validated after generation
+  so the UI can flag anything unsupported.
+
+Deeper write-ups live in [`docs/`](./docs/INDEX.md), including an ADR-style
+[design decision log](./docs/design-decisions.md).
 
 ---
 
-## Step 2 — Start PostgreSQL via Colima
+## Tech stack
 
-```bash
-colima start --cpu 2 --memory 4 --disk 20
-docker run -d \
-  --name mettrie-postgres \
-  --restart unless-stopped \
-  -e POSTGRES_USER=mettrie \
-  -e POSTGRES_PASSWORD=mettrie_dev \
-  -e POSTGRES_DB=mettrie_meta \
-  -p 5432:5432 \
-  pgvector/pgvector:pg16
-```
-
-Verify it's running:
-```bash
-docker ps
-```
-
-You should see `mettrie-postgres` in the list.
-
-> **Note:** Run `colima start` again if your machine restarts. Docker containers with `--restart unless-stopped` will come back automatically once Colima is up.
+| Layer | Tech |
+|---|---|
+| Framework | Next.js 16 (App Router, Server Components, streaming), React 19 |
+| Language / runtime | TypeScript, Bun |
+| Styling | Tailwind CSS v4 |
+| Auth | Auth.js v5 (Google OAuth) |
+| Database | PostgreSQL 16 + pgvector, Row-Level Security |
+| LLMs | Anthropic Claude (Haiku 4.5 for extraction, Sonnet 4.6 for synthesis) |
+| Embeddings | OpenAI `text-embedding-3-large` |
+| Web search | Tavily (optional) |
+| Testing | Vitest |
+| Deploy | Docker on Railway, with Railway cron for the queue and scheduler |
 
 ---
 
-## Step 3 — Clone this repo and install dependencies
+## Quick start
+
+**Prerequisites:** [Bun](https://bun.sh), Docker (or [Colima](https://github.com/abiosoft/colima) on macOS), and OAuth
+credentials for Google (plus Slack or Salesforce if you want those sources). You'll also need Anthropic and OpenAI API keys.
 
 ```bash
-git clone <this-repo-url> mettrie
-cd mettrie
+git clone https://github.com/vamshidhar199/mettrie.git keel
+cd keel
+bash setup.sh          # starts Postgres + pgvector in Docker, creates the app DB role, writes .env.local
+# fill in OAuth + API keys in .env.local
 bun install
-```
-
----
-
-## Step 4 — Set up Google OAuth + Gmail API
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create a new project (or use an existing one)
-3. Enable these APIs:
-   - **Gmail API** — for reading emails
-   - **Google People API** — for user profile info
-4. Go to **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
-   - Application type: **Web application**
-   - Authorised redirect URIs: `http://localhost:3002/api/auth/callback/google`
-5. Copy the **Client ID** and **Client Secret**
-6. Go to **APIs & Services → OAuth consent screen**
-   - Add scopes: `email`, `profile`, `https://www.googleapis.com/auth/gmail.readonly`
-   - Under **Test users**: add the Google email of every developer who needs to sign in locally
-
-> **Team note:** The Google OAuth app stays in Testing mode for local dev. Each new developer must be added as a test user or they'll get an "access blocked" error at sign-in.
-
----
-
-## Step 5 — Set up Slack OAuth
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App → From scratch**
-   - Name: `Keel Dev`
-   - Workspace: pick a workspace you own (create a free one at slack.com/get-started if needed)
-2. Go to **OAuth & Permissions → User Token Scopes** → add each scope:
-   ```
-   channels:history  channels:read
-   groups:history    groups:read
-   im:history        im:read
-   mpim:history      mpim:read
-   users:read        team:read
-   ```
-3. Under **Redirect URLs** → add: `http://localhost:3002/api/slack/callback` → Save URLs
-4. Click **Install to Workspace** → Allow
-5. Go to **Basic Information → App Credentials** → copy **Client ID** and **Client Secret**
-
-> **Team note:** For local dev, all developers share the same `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET`. Each developer connects their own Slack account via OAuth — their tokens are stored separately in the DB. Public distribution (so users can connect any workspace) requires an HTTPS URL and is enabled at Railway deploy time.
-
----
-
-## Step 6 — Create your .env.local
-
-`setup.sh` creates `.env.local` from `.env.example` and auto-generates `AUTH_SECRET`. Open it and fill in the remaining values:
-
-```env
-# PostgreSQL — app role (non-superuser, NOBYPASSRLS) for request traffic
-DATABASE_URL=postgresql://mettrie_app:mettrie_app_dev@localhost:5432/mettrie_meta
-
-# PostgreSQL — superuser for migrations and admin scripts
-ADMIN_DATABASE_URL=postgresql://mettrie:mettrie_dev@localhost:5432/mettrie_meta
-
-# Auth.js secret — auto-generated by setup.sh
-AUTH_SECRET=<auto-generated>
-
-# At-rest encryption key — generate with: openssl rand -base64 32
-# Encrypts OAuth tokens, user API keys, and raw Gmail/Slack content.
-# WARNING: losing this key makes existing encrypted rows unrecoverable.
-ENCRYPTION_KEY=<paste output here>
-
-# Google OAuth — from Step 4
-GOOGLE_CLIENT_ID=<your client id>
-GOOGLE_CLIENT_SECRET=<your client secret>
-
-# Slack OAuth — from Step 5 (shared across all devs)
-SLACK_CLIENT_ID=<your slack client id>
-SLACK_CLIENT_SECRET=<your slack client secret>
-
-# Anthropic — from console.anthropic.com → API Keys
-ANTHROPIC_API_KEY=sk-ant-...
-
-# OpenAI — from platform.openai.com → API Keys
-OPENAI_API_KEY=sk-...
-
-# Dev server URL
-NEXTAUTH_URL=http://localhost:3002
-```
-
-> `AUTH_SECRET` and `ENCRYPTION_KEY` are personal — generate your own. Everything else is shared across the team.
-
-### One-time manual DB role setup (prod)
-
-Before the first production deploy, run as superuser:
-
-```sql
-CREATE ROLE mettrie_app LOGIN PASSWORD '<strong-pw>' NOBYPASSRLS;
-GRANT CONNECT ON DATABASE mettrie_meta TO mettrie_app;
-GRANT USAGE ON SCHEMA public TO mettrie_app;
-```
-
-Then set `DATABASE_URL` to the `mettrie_app` connection string and `ADMIN_DATABASE_URL` to the superuser one. For local dev `setup.sh` handles this automatically.
-
-### Backfilling encryption on an existing database
-
-If you had data in the DB before encryption was enabled, run the one-shot backfill once after setting `ENCRYPTION_KEY`:
-
-```bash
-bun run lib/migrate-encrypt.ts
-```
-
-It re-writes existing plaintext rows in `accounts`, `user_api_keys`, and `raw_events` as ciphertext. Idempotent — safe to re-run.
-
----
-
-## Step 7 — Run the dev server
-
-```bash
 bun run dev -- --port 3002
 ```
 
-Open [http://localhost:3002](http://localhost:3002).
+Open <http://localhost:3002> and sign in with Google. Migrations run automatically on first sign-in.
 
-Sign in with Google. On first sign-in the app automatically:
-1. Runs database migrations (creates all tables including `pages`, `content_chunks`, `links` with RLS)
-2. Redirects you to the Overview dashboard
+👉 The full walkthrough, covering Google Cloud, Slack app, and Salesforce Connected App setup plus troubleshooting, is in
+**[docs/local-setup.md](./docs/local-setup.md)**. For production on Railway, see **[docs/deployment.md](./docs/deployment.md)**.
 
----
+### Scripts
 
-## Step 8 — Connect sources and extract knowledge
-
-1. Go to **Sources** in the sidebar
-2. **Gmail**: click the sync button to pull your emails into the database
-3. **Slack**: click **Connect Slack** → authorize → then click the sync button
-4. Click **Extract all** to run the AI extraction pipeline over all synced messages
-5. Go to **Pages** to see your extracted knowledge
-6. Go to **Ask** to query it conversationally
-
----
-
-## Adding a new developer to the team
-
-1. **Share these values** from your `.env.local`:
-   - `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`
-   - `SLACK_CLIENT_ID` + `SLACK_CLIENT_SECRET`
-   - `ANTHROPIC_API_KEY` + `OPENAI_API_KEY`
-
-2. **Add them as a Google OAuth test user:**
-   Google Cloud Console → APIs & Services → OAuth consent screen → Test users → add their Google email.
-   Without this, they'll get "Access blocked" when signing in.
-
-3. **Slack**: they share the same Slack app. They connect their own Slack account via OAuth from the Sources page. Each developer's tokens are stored separately — they only see their own workspace data.
-
-4. They run `bash setup.sh` from the repo root and fill in their own `AUTH_SECRET` and `ENCRYPTION_KEY`.
-
-> Once deployed to Railway (HTTPS), Slack public distribution is enabled and any user can connect any workspace without needing to be added manually.
-
----
-
-## Production deployment (Railway)
-
-### Required env vars
-- `DATABASE_URL` — `mettrie_app` connection string (non-superuser, NOBYPASSRLS). See Step 6 for role setup.
-- `ADMIN_DATABASE_URL` — superuser connection string, used only for migrations.
-- `AUTH_SECRET` — `openssl rand -base64 32`
-- `ENCRYPTION_KEY` — `openssl rand -base64 32`. **Store this in a password manager.** If lost, all encrypted rows (OAuth tokens, user API keys, raw Gmail/Slack content) become unrecoverable.
-- `AUTH_TRUST_HOST=true` — required by Auth.js v5 behind a proxy; without it sign-in returns "UntrustedHost" 500
-- `NEXTAUTH_URL=https://<railway-url>` — drives both Gmail and Slack callback URLs
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`
-- `OPENAI_API_KEY` — required for vector embeddings
-- `ANTHROPIC_API_KEY` — required for extraction and synthesis
-
-### Slack public distribution
-After Railway deploy:
-1. Add `https://<railway-url>/api/slack/callback` to Slack App **Redirect URLs**
-2. **Features → Event Subscriptions** → enable, set Request URL to `https://<railway-url>/api/slack/events`, subscribe to `tokens_revoked` + `app_uninstalled`
-3. **Settings → Manage Distribution** → complete checklist → Activate Public Distribution
+| Command | What it does |
+|---|---|
+| `bun run dev` | Start the dev server |
+| `bun run build` | Production build |
+| `bun run test` | Run the Vitest suite (including RLS isolation tests) |
+| `bun run lint` | ESLint |
+| `bun run lint:rls` | Guardrail that fails if tenant tables are queried outside approved modules |
 
 ---
 
 ## Project structure
 
 ```
-mettrie/
-└── app/                        # Next.js application
-    ├── app/
-    │   ├── (app)/              # Authenticated shell (sidebar layout)
-    │   │   ├── layout.tsx      # Sidebar + auth guard
-    │   │   ├── overview/       # Dashboard
-    │   │   ├── ask/            # Conversational query UI
-    │   │   ├── pages/          # Knowledge page list + detail
-    │   │   ├── graph/          # Force-directed knowledge graph
-    │   │   ├── sources/        # Gmail + Slack sync + extraction controls
-    │   │   └── settings/       # Account + sign out
-    │   ├── api/
-    │   │   ├── gmail/          # Gmail OAuth + sync routes
-    │   │   ├── slack/          # Slack OAuth + sync routes (connect, callback, sync, status, settings)
-    │   │   └── ...
-    │   └── components/         # Shared UI components
-    ├── lib/
-    │   ├── extract.ts          # Claude extraction (Haiku)
-    │   ├── synthesize.ts       # Claude answer synthesis (Sonnet)
-    │   ├── gbrain.ts           # Inline page writes + pgvector queries (RLS-protected)
-    │   ├── embeddings.ts       # OpenAI text-embedding-3-large
-    │   ├── gmail.ts            # Gmail API client
-    │   ├── slack.ts            # Slack API client + token storage
-    │   ├── sync.ts             # syncGmail, syncSlack, schedulerTick
-    │   ├── pipeline.ts         # Extraction pipeline
-    │   ├── migrate.ts          # mettrie_meta schema migrations
-    │   └── db.ts               # Postgres connection pools
-    └── .env.example            # All required env vars documented
+.
+├── app/
+│   ├── (app)/                 # Authenticated shell
+│   │   ├── ask/               # Streaming conversational search
+│   │   ├── overview/          # Proactive daily-brief hub
+│   │   ├── digests/           # Past briefs
+│   │   ├── graph/             # Force-directed knowledge graph
+│   │   ├── pages/             # Extracted knowledge pages
+│   │   ├── workflows/         # Scheduled AI agents
+│   │   ├── skills/            # Reusable /slash skills
+│   │   ├── sources/           # Gmail · Slack · Salesforce · Files
+│   │   ├── usage/             # LLM spend dashboard
+│   │   └── settings/
+│   ├── api/                   # Route handlers (OAuth, sync, queue, cron, query, …)
+│   └── components/
+├── lib/
+│   ├── extract.ts             # LLM entity + commitment extraction
+│   ├── synthesize.ts          # Cited answer synthesis
+│   ├── gbrain.ts              # Page writes + pgvector search (RLS-scoped)
+│   ├── queue/                 # Postgres job queue + runners
+│   ├── sync.ts                # Source syncs + scheduler tick
+│   ├── gmail.ts · slack.ts · salesforce.ts
+│   ├── digest.ts · commitments.ts · workflows.ts · skills.ts
+│   ├── crypto.ts              # Encryption at rest
+│   ├── db.ts                  # Pools + withUser() RLS wrapper
+│   └── migrate.ts             # Schema migrations
+├── docs/                      # Architecture, features, deployment, roadmap
+├── Dockerfile
+└── railway.toml               # Deploy + cron config
 ```
 
 ---
 
-## Key architecture decisions
+## Roadmap
 
-**Shared database with RLS.** All tenant knowledge (`pages`, `content_chunks`, `links`) lives in `mettrie_meta`. Row-level security policies on each table enforce that a user can only see their own rows. Every query against these tables goes through `withUser(userId, client => ...)` in `lib/db.ts`, which wraps a transaction with `SET LOCAL app.user_id`.
+- Email and Slack delivery of the daily brief
+- A dedicated worker process, separate from the web tier
+- Object storage for raw payloads
+- More sources (Calendar, Notion, Linear)
 
-**Search is direct pgvector.** `brainSearch` in `lib/gbrain.ts` queries the `content_chunks` table directly using `embedding <=> query_embedding` cosine similarity. This is type-agnostic and fast.
-
-**Inline page writes.** `putPage` in `lib/gbrain.ts` embeds chunks via OpenAI and writes to `pages`/`content_chunks`/`links` directly — no subprocess.
-
-**Adding a new entity type** (e.g. `deal`, `event`) only requires changes in:
-1. `lib/extract.ts` — add to `EntityType` union + Claude prompt
-2. `app/components/type-badge.tsx` — badge colour
-3. `app/(app)/graph/graph-canvas.tsx` — node colour
-4. `app/(app)/graph/page.tsx` — legend colour
+See [docs/intelligent-ui-roadmap.md](./docs/intelligent-ui-roadmap.md) and [docs/roadmap.md](./docs/roadmap.md).
 
 ---
 
-## Troubleshooting
-
-**`ECONNREFUSED` on port 5432**
-Colima isn't running. Run `colima start`.
-
-**Google sign-in fails / "Access blocked"**
-You are not added as a test user. Go to Google Cloud Console → APIs & Services → OAuth consent screen → Test users → add your Google email.
-
-**Google sign-in fails / redirect URI mismatch**
-Check that `http://localhost:3002/api/auth/callback/google` is listed in your OAuth client's authorised redirect URIs.
-
-**Slack "Connect" does nothing or errors**
-Check that `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` are set in `.env.local` and the dev server was restarted after adding them.
-
-**Slack sync shows 0 messages**
-The sync uses `last_synced_at` as the oldest timestamp. If you posted messages before the first sync ran, reset the cursor:
-```bash
-bun --eval "
-const { Pool } = (await import('pg'));
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-await pool.query(\"DELETE FROM sync_cursors WHERE user_id = '<your-user-id>' AND source = 'slack'\");
-await pool.end();
-"
-```
-Then trigger sync again from Sources.
-
-**Extraction returns no pages**
-Check that `ANTHROPIC_API_KEY` is set and has credits at console.anthropic.com. Run extraction on a small batch first (Extract 20).
-
-**Graph shows nothing**
-Pages need to be extracted first (Sources → Extract). The graph only shows pages that have links between them.
-
-**`pgvector` extension not found**
-You must use the `pgvector/pgvector:pg16` Docker image, not plain `postgres:16`. Re-run the `docker run` command from Step 2.
+<div align="center">
+Built by <a href="https://github.com/vamshidhar199">@vamshidhar199</a>
+</div>
